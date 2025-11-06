@@ -1,0 +1,22 @@
+name,seqid,start,end,strand,length,coverage_pct,avg_identity,quality_score,status
+hypothetical protein,contig_2,1,174,+,174,0.0,0,0.0,missing
+Universal stress protein,contig_2,236,703,+,468,0.0,0,0.0,missing
+Integral membrane protein,contig_2,728,1456,+,729,0.0,0,0.0,missing
+hypothetical protein,contig_2,1540,1692,+,153,0.0,0,0.0,missing
+Class I SAM-dependent methyltransferase,contig_2,2139,3326,-,1188,0.0,0,0.0,missing
+AI-2E family transporter,contig_2,3482,4522,+,1041,0.0,0,0.0,missing
+Transcriptional regulator,contig_2,4515,4745,-,231,0.0,0,0.0,missing
+Transcription regulator BetR N-terminal domain-containing protein,contig_2,4913,5104,+,192,0.0,0,0.0,missing
+D-alanine--D-alanine ligase,contig_2,5203,6255,-,1053,0.0,0,0.0,missing
+Hsp20/alpha crystallin family protein,contig_2,6448,6888,+,441,0.0,0,0.0,missing
+Integral membrane protein,contig_2,6936,7475,-,540,0.0,0,0.0,missing
+IS30 family ISLpl1 transposase,contig_2,7685,8614,+,930,0.0,0,0.0,missing
+RNA polymerase recycling motor HelD,contig_2,8707,10998,-,2292,0.0,0,0.0,missing
+Fluoride-specific ion channel FluC,contig_2,11292,11645,-,354,0.0,0,0.0,missing
+fluoride efflux transporter CrcB,contig_2,11642,12049,-,408,0.0,0,0.0,missing
+Sodium/hydrogen exchanger family protein,contig_2,12409,14289,+,1881,0.0,0,0.0,missing
+Proline iminopeptidase,contig_2,14363,15265,+,903,0.0,0,0.0,missing
+IS3 family transposase ORF B,contig_2,15312,16124,-,813,0.0,0,0.0,missing
+Transposase,contig_2,16166,16684,-,519,0.0,0,0.0,missing
+MarR family protein,contig_2,16772,17236,-,465,0.0,0,0.0,missing
+Histidine phosphatase family protein,contig_2,17549,18208,+,660,0.0,0,0.0,missing

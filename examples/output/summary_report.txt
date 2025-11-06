@@ -1,0 +1,45 @@
+======================================================================
+GENOME ASSEMBLY COMPARISON SUMMARY
+======================================================================
+
+Assembly: sample.fna
+Reference: reference.fna
+
+
+CHROMOSOME: contig_1
+----------------------------------------------------------------------
+Length: 1,898,076 bp
+Alignments: 22
+Contigs aligned: 4
+Genes: 1918
+Average gene quality: 95.25/100
+
+Gene status breakdown:
+  Complete: 1841
+  Missing: 74
+  Incomplete: 3
+
+Misassemblies: 12
+  Inversions: 5
+  Gaps: 7
+
+Contigs mapping to this sequence:
+  contig_1_RC: 142,324 bp, 99.0% identity
+  contig_2_RC: 87,990 bp, 97.3% identity
+  contig_3_RC: 1,399,070 bp, 98.9% identity
+  contig_4_RC: 194,080 bp, 99.1% identity
+
+
+PLASMID: contig_2
+----------------------------------------------------------------------
+Length: 18,445 bp
+Alignments: 0
+Contigs aligned: 0
+Genes: 21
+Average gene quality: 0.00/100
+
+Gene status breakdown:
+  Missing: 21
+
+Contigs mapping to this sequence:
+
