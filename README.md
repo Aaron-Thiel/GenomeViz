@@ -6,27 +6,47 @@
   <img src="https://img.shields.io/badge/python-3.7+-blue.svg" alt="Python">
 </p>
 
-**GenomeViz** is a comprehensive tool for visualizing and comparing bacterial genome assemblies against reference sequences. It creates beautiful circular and linear plots with three information rings showing gene quality, alignment status, and contig mapping.
+**GenomeViz** is a comprehensive tool for visualizing and comparing bacterial genome assemblies against reference sequences. It creates beautiful circular and linear plots (both static and interactive) with comprehensive multi-track visualizations showing gene quality, alignment status, contig mapping, coverage depth, and misassemblies.
 
 ## ✨ Features
 
-### Three-Ring Visualization System
+### Visualization Examples
 
-![Circular Plot Example](examples/output/contig_1_circular.png)
+<p align="center">
+  <img src="examples/output/contig_1/contig_1_circular.png" alt="Circular Plot Example" width="600">
+  <br>
+  <em>Circular visualization showing three information rings</em>
+</p>
+
+<p align="center">
+  <img src="examples/output/contig_1/contig_1_linear.png" alt="Linear Plot Example" width="700">
+  <br>
+  <em>Linear visualization with five comprehensive tracks</em>
+</p>
+
+### Three-Ring Visualization System (Circular Plots)
 
 - **Ring 1 (Outer)**: Gene quality assessment
   - Color-coded by quality score (excellent/good/fair/poor)
   - Shows gene coverage and identity
-  
+
 - **Ring 2 (Middle)**: Alignment status
   - 🟢 Green: Complete coverage (1x)
   - 🟠 Orange: Duplicated regions (>1x)
   - 🔴 Red: Inverted regions (reverse strand)
   - ⚪ Gray: Missing regions (gaps)
-  
+
 - **Ring 3 (Inner)**: Contig mapping
   - Each contig has a unique color
   - Shows which assembly contigs align to reference
+
+### Five-Track Visualization System (Linear Plots)
+
+- **Track 1**: Gene quality with color-coded scores
+- **Track 2**: Contig mapping showing assembly alignment
+- **Track 3**: Coverage depth across the genome
+- **Track 4**: Alignment identity with reference lines
+- **Track 5**: Misassemblies (inversions, gaps, overlaps)
 
 ### Interactive Plots
 
