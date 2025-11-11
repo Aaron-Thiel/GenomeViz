@@ -12,23 +12,22 @@ Length: 1,898,076 bp
 Alignments: 22
 Contigs aligned: 4
 Genes: 1918
-Average gene quality: 95.25/100
 
-Gene status breakdown:
+Gene Quality Summary:
   Complete: 1841
-  Missing: 74
   Incomplete: 3
+  Divergent: 0
+  Missing: 74
 
-Misassemblies: 12
+Average Gene Metrics:
+  Coverage: 96.2%
+  Identity: 94.9%
+  Quality Score: 95.3/100
+
+Misassemblies Detected:
   Inversions: 5
   Gaps: 7
-
-Contigs mapping to this sequence:
-  contig_1_RC: 142,324 bp, 99.0% identity
-  contig_2_RC: 87,990 bp, 97.3% identity
-  contig_3_RC: 1,399,070 bp, 98.9% identity
-  contig_4_RC: 194,080 bp, 99.1% identity
-
+  Overlaps: 0
 
 PLASMID: contig_2
 ----------------------------------------------------------------------
@@ -36,10 +35,18 @@ Length: 18,445 bp
 Alignments: 0
 Contigs aligned: 0
 Genes: 21
-Average gene quality: 0.00/100
 
-Gene status breakdown:
+Gene Quality Summary:
+  Complete: 0
+  Incomplete: 0
+  Divergent: 0
   Missing: 21
 
-Contigs mapping to this sequence:
+Average Gene Metrics:
+  Coverage: 0.0%
+  Identity: 0.0%
+  Quality Score: 0.0/100
 
+======================================================================
+Analysis complete!
+======================================================================

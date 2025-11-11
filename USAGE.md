@@ -117,6 +117,26 @@ chromosome  Bakta  CDS   1  1500  .  +  0  ID=cds001;Parent=gene001
 
 ## Output Files
 
+GenomeViz creates an organized output structure with separate directories for each reference sequence:
+
+```
+output/
+├── sequence_1/                           # Directory for first reference sequence
+│   ├── sequence_1_circular.png          # Static circular plot
+│   ├── sequence_1_interactive_circular.html  # Interactive circular plot
+│   ├── sequence_1_linear.png            # Static linear plot
+│   ├── sequence_1_interactive_linear.html    # Interactive linear plot
+│   ├── sequence_1_gene_stats.csv        # Per-gene quality statistics
+│   └── gene_alignments/                 # Detailed gene alignments (for clicking)
+│       ├── gene_001.html
+│       ├── gene_002.html
+│       └── ...
+├── sequence_2/                           # If multiple sequences (e.g., plasmids)
+│   └── (similar structure)
+├── contig_mapping.json                   # All contig-to-reference mappings
+└── summary_report.txt                    # Overall analysis summary
+```
+
 ### Static Circular Plots (*.png)
 
 High-resolution circular plots suitable for publications.
@@ -129,12 +149,14 @@ High-resolution circular plots suitable for publications.
 **Resolution**: 300 DPI
 **Size**: ~1-2 MB per plot
 
-### Interactive Plots (*.html)
+### Interactive Circular Plots (*_interactive_circular.html)
 
-HTML files with interactive features:
+HTML files with interactive circular visualization:
 - **Zoom**: Scroll or drag to zoom
 - **Pan**: Click and drag to move around
 - **Hover**: See detailed information
+- **Click genes**: Click any gene to view detailed alignment (NEW in v1.1.0)
+- **Help button**: Click "?" for usage instructions (NEW in v1.1.0)
 - **Legend**: Click to show/hide traces
 - **Export**: Download as PNG
 
@@ -142,10 +164,54 @@ HTML files with interactive features:
 - Gene information (name, position, quality)
 - Contig details (name, coverage, identity)
 - Alignment status (type, position, size)
+- Clickable genes open detailed alignment views
 
 **Usage**: Open in any web browser
 
-### Linear Plots (*.png)
+### Interactive Linear Plots (*_interactive_linear.html)
+
+**NEW in v1.1.0**: Fully interactive linear genome viewer with multi-level zooming.
+
+**Five Comprehensive Tracks**:
+1. **Gene Quality**: Color-coded gene quality scores (0-100)
+2. **Contig Mapping**: Assembly contigs aligned to reference
+3. **Coverage Depth**: Read/contig coverage across genome
+4. **Alignment Identity**: Sequence identity percentage
+5. **Misassemblies**: Inversions, gaps, and overlaps
+
+**Multi-Level Zoom Functionality**:
+- **Genome Level** (default view):
+  - Overview of entire genome
+  - All tracks visible simultaneously
+  - Navigate using range slider at bottom
+
+- **Gene Level** (medium zoom):
+  - Individual genes become visible
+  - Detailed gene annotations appear
+  - Gene boundaries and quality scores clear
+
+- **Nucleotide Level** (maximum zoom):
+  - Sequence-level resolution
+  - Individual nucleotide differences visible
+  - SNPs, insertions, and deletions highlighted
+
+**Interactive Controls**:
+- **Scroll** to zoom in/out smoothly
+- **Click and drag** to pan along genome
+- **Range slider** at bottom for quick navigation
+- **Hover** over any element for detailed information
+- **Click genes** to view detailed alignment (NEW in v1.1.0)
+- **Help button** (?) for usage instructions (NEW in v1.1.0)
+- **Click legend** items to toggle tracks on/off
+- **Camera icon** to export as high-resolution PNG
+
+**Performance**: Automatically optimizes for large genomes with intelligent downsampling
+
+**Usage**: Open in any web browser (Chrome, Firefox, Safari, Edge)
+
+**Gene Clicking**: Click any gene in Track 1 to open a detailed alignment view showing nucleotide-level differences, gaps, and mismatches
+
+### Static Linear Plots (*.png)
 
 Multi-track linear visualizations showing:
 1. Gene-level quality
@@ -312,15 +378,46 @@ python genomeViz.py ... --min-gap 2000 --min-inversion 1000
 # Skip static circular plots
 python genomeViz.py ... --no-circular
 
-# Skip interactive HTML plots
+# Skip interactive circular plots
 python genomeViz.py ... --no-interactive
 
-# Skip linear plots
+# Skip static linear plots
 python genomeViz.py ... --no-linear
 
-# Only generate statistics
-python genomeViz.py ... --no-circular --no-interactive --no-linear
+# Skip interactive linear plots (NEW in v1.1.0)
+python genomeViz.py ... --no-interactive-linear
+
+# Skip gene alignment generation (disables gene clicking feature)
+python genomeViz.py ... --no-gene-alignments
+
+# Only generate statistics (skip all visualizations)
+python genomeViz.py ... --no-circular --no-interactive --no-linear --no-interactive-linear
 ```
+
+**Note**: Using `--no-gene-alignments` will disable the gene clicking feature in interactive plots but can save time for large genomes with many genes.
+
+### Using Interactive Linear Plots (NEW in v1.1.0)
+
+The interactive linear plot is generated by default and provides powerful exploration capabilities:
+
+```bash
+# Default: generates all plots including interactive linear
+python genomeViz.py \
+  --reference ref.fna \
+  --assembly asm.fna \
+  --gff genes.gff3 \
+  --output results/
+
+# Open the interactive linear plot
+# results/{seqid}_interactive_linear.html
+```
+
+**Best practices**:
+- Start at genome level to identify problematic regions
+- Zoom in on specific genes for detailed inspection
+- Use range slider for rapid genome navigation
+- Export high-resolution views for presentations
+- Toggle tracks to focus on specific data types
 
 ### Disabling Auto-Orientation
 
@@ -411,10 +508,15 @@ python genomeViz.py ... --no-auto-orient
 
 ### Q: Can I modify the colors?
 
-**A**: Yes! The script uses standard color codes. Search for color definitions in the code:
-- Gene quality: Interactive Plotly definitions at `genomeViz.py` lines ~627 and static matplotlib definitions at lines ~941
-- Alignment status: Interactive Plotly definitions at `genomeViz.py` line ~689 and static matplotlib definitions at line ~979
-- Edit and save
+**A**: Yes! The code uses standard color codes. Color definitions are organized in separate visualizer files (NEW in v1.1.0):
+- **Gene quality colors**:
+  - Interactive: `src/interactive_circular_visualizer.py` and `src/interactive_linear_visualizer.py`
+  - Static: `src/circular_visualizer.py` and `src/linear_visualizer.py`
+- **Alignment status colors**:
+  - Interactive: `src/interactive_circular_visualizer.py`
+  - Static: `src/circular_visualizer.py`
+- Search for `COLOR_MAP`, `gene_colors`, or `quality_colors` in the respective files
+- Edit the color values and save
 
 ### Q: What if my GFF is from a different tool?
 
