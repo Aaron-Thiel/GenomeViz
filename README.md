@@ -156,6 +156,10 @@ results/
 
 - `--min-gap`: Minimum gap size to report (default: 1000 bp)
 - `--min-inversion`: Minimum inversion size to report (default: 500 bp)
+- `--origin`: Manually set origin position in base pairs (NEW in v1.2.0)
+  - If not specified: Auto-detects oriC from GFF annotations
+  - Use `--origin 0` to disable origin rotation entirely
+  - Use `--origin 150000` to manually set origin at position 150,000 bp
 - `--no-auto-orient`: Skip automatic orientation detection
 - `--no-circular`: Skip circular plot generation
 - `--no-linear`: Skip static linear plot generation
@@ -274,6 +278,41 @@ Ring 3: Some contigs in unusual positions
 ```
 
 ## 🔧 Advanced Usage
+
+### Controlling Origin of Replication (NEW in v1.2.0)
+
+By default, GenomeViz automatically detects and aligns to the origin of replication (oriC):
+
+```bash
+# Auto-detect oriC from GFF (default)
+python genomeViz.py \
+  --reference ref.fna \
+  --assembly asm.fna \
+  --gff genes.gff3 \
+  --output results/
+```
+
+Manually specify origin position:
+```bash
+# Set custom origin at 150,000 bp
+python genomeViz.py \
+  --reference ref.fna \
+  --assembly asm.fna \
+  --gff genes.gff3 \
+  --output results/ \
+  --origin 150000
+```
+
+Disable origin rotation:
+```bash
+# Keep original coordinates
+python genomeViz.py \
+  --reference ref.fna \
+  --assembly asm.fna \
+  --gff genes.gff3 \
+  --output results/ \
+  --origin 0
+```
 
 ### Using the Interactive Linear Plot
 

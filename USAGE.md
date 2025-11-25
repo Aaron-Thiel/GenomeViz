@@ -372,6 +372,41 @@ For large genomes:
 python genomeViz.py ... --min-gap 2000 --min-inversion 1000
 ```
 
+### Controlling Origin of Replication (NEW in v1.2.0)
+
+By default, GenomeViz auto-detects oriC from your GFF file and rotates the reference to start at the origin:
+
+```bash
+# Auto-detect oriC (default behavior)
+python genomeViz.py \
+  --reference ref.fna \
+  --assembly asm.fna \
+  --gff genes.gff3 \
+  --output results/
+```
+
+To manually specify the origin position:
+```bash
+# Start visualization at position 150,000 bp
+python genomeViz.py \
+  --reference ref.fna \
+  --assembly asm.fna \
+  --gff genes.gff3 \
+  --output results/ \
+  --origin 150000
+```
+
+To disable origin rotation entirely:
+```bash
+# Keep original sequence coordinates (no rotation)
+python genomeViz.py \
+  --reference ref.fna \
+  --assembly asm.fna \
+  --gff genes.gff3 \
+  --output results/ \
+  --origin 0
+```
+
 ### Skipping Specific Outputs
 
 ```bash

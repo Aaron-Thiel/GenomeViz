@@ -15,6 +15,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Ensures visualizations consistently start at the biological origin of replication
   - Improves comparability across different genome assemblies and references
   - Works automatically when oriC annotation is present in GFF file
+  - New `--origin` command-line flag to manually control origin position:
+    - Auto-detects oriC by default (when flag not specified)
+    - Use `--origin 0` to disable rotation
+    - Use `--origin <position>` to manually set origin position in base pairs
 
 ### Changed
 - Version updated from 1.1.0 to 1.2.0
