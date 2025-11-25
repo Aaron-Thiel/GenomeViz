@@ -1,2 +1,4 @@
 # Ignore the top-level 'setup' folder
 /setup/
+/output/output_1/
+src/__pycache__/

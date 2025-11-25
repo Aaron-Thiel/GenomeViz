@@ -52,7 +52,6 @@ class InteractiveLinearVisualizer:
             output_file (str): Path to output HTML file
         """
         print(f"  Creating interactive linear plot: {output_file}")
-        print(f"    Extracting nucleotide-level differences...")
 
         # Create subplot figure with 5 tracks
         fig = make_subplots(

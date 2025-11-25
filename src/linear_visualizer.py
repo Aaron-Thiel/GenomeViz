@@ -38,18 +38,40 @@ class LinearVisualizer:
         """
         print(f"  Creating linear plot: {output_file}")
 
-        fig, axes = plt.subplots(5, 1, figsize=(16, 14),
-                                gridspec_kw={'height_ratios': [2, 1, 1, 1, 1]})
-
+        # Create figure with tight_layout disabled so we can control positions manually
+        fig = plt.figure(figsize=(16, 14))
+        
         seq_type_label = ref_seq.seq_type.capitalize()
         fig.suptitle(f'{seq_type_label}: {ref_seq.seqid}',
-                    fontsize=14, fontweight='bold')
+                    fontsize=14, fontweight='bold', y=0.98)
+
+        # Define fixed positions for all plot areas [left, bottom, width, height]
+        # These positions ensure all tracks have identical width
+        plot_left = 0.08
+        plot_width = 0.82  # Leave room for colorbar on the right
+        
+        # Heights and positions for 5 tracks
+        track_heights = [0.22, 0.11, 0.11, 0.11, 0.11]  # Proportional heights
+        track_spacing = 0.055  # Space between tracks
+        
+        # Calculate bottom positions (from bottom to top)
+        bottom_positions = []
+        current_bottom = 0.06
+        for i in range(4, -1, -1):  # Start from bottom track (track 5) to top (track 1)
+            bottom_positions.insert(0, current_bottom)
+            current_bottom += track_heights[i] + track_spacing
+        
+        # Create axes with exact positions
+        ax1 = fig.add_axes([plot_left, bottom_positions[0], plot_width, track_heights[0]])
+        ax2 = fig.add_axes([plot_left, bottom_positions[1], plot_width, track_heights[1]])
+        ax3 = fig.add_axes([plot_left, bottom_positions[2], plot_width, track_heights[2]])
+        ax4 = fig.add_axes([plot_left, bottom_positions[3], plot_width, track_heights[3]])
+        ax5 = fig.add_axes([plot_left, bottom_positions[4], plot_width, track_heights[4]])
 
         # ====================================================================
         # TRACK 1: GENE QUALITY
         # ====================================================================
 
-        ax1 = axes[0]
         ax1.set_title('Gene-Level Alignment Quality (0-100 score)', fontsize=11, pad=10)
 
         for gene in ref_seq.gene_stats:
@@ -74,18 +96,22 @@ class LinearVisualizer:
         ax1.set_ylabel('Quality', fontsize=10)
         ax1.set_yticks([])
 
+        # Add colorbar to the right of the plot area
+        cbar_left = plot_left + plot_width + 0.01
+        cbar_width = 0.02
+        cax = fig.add_axes([cbar_left, bottom_positions[0], cbar_width, track_heights[0]])
+        
         cmap = plt.cm.RdYlGn
         norm = Normalize(vmin=0, vmax=100)
         sm = ScalarMappable(cmap=cmap, norm=norm)
         sm.set_array([])
-        cbar = plt.colorbar(sm, ax=ax1, orientation='vertical', pad=0.01, aspect=10)
+        cbar = plt.colorbar(sm, cax=cax, orientation='vertical')
         cbar.set_label('Quality Score', fontsize=9)
 
         # ====================================================================
         # TRACK 2: CONTIG MAPPING
         # ====================================================================
 
-        ax2 = axes[1]
         ax2.set_title('Assembly Contig Mapping', fontsize=11, pad=10)
 
         # Get consistent colors using CircularVisualizer method
@@ -117,7 +143,6 @@ class LinearVisualizer:
         # TRACK 3: COVERAGE
         # ====================================================================
 
-        ax3 = axes[2]
         ax3.set_title('Alignment Coverage', fontsize=11, pad=10)
 
         coverage = np.zeros(ref_seq.length)
@@ -135,7 +160,6 @@ class LinearVisualizer:
         # TRACK 4: IDENTITY
         # ====================================================================
 
-        ax4 = axes[3]
         ax4.set_title('Alignment Identity (%)', fontsize=11, pad=10)
 
         for aln in ref_seq.alignments:
@@ -155,7 +179,6 @@ class LinearVisualizer:
         # TRACK 5: MISASSEMBLIES
         # ====================================================================
 
-        ax5 = axes[4]
         ax5.set_title('Detected Misassemblies', fontsize=11, pad=10)
 
         y_pos = {'inversion': 0.7, 'gap': 0.4, 'overlap': 0.1}
@@ -175,6 +198,5 @@ class LinearVisualizer:
         ax5.set_yticks([0.1, 0.4, 0.7])
         ax5.set_yticklabels(['Overlap', 'Gap', 'Inversion'], fontsize=9)
 
-        plt.tight_layout()
         plt.savefig(output_file, dpi=300, bbox_inches='tight')
         plt.close()

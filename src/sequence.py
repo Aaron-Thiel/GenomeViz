@@ -97,6 +97,44 @@ class GFFParser:
             print(f"  {seqid}: {len(genes)} genes")
 
 
+def find_oric_position(gff_file):
+    """
+    Find oriC position from GFF file.
+    
+    Returns:
+        tuple: (position, seqid) or (None, None) if not found
+    """
+    oric_features = []
+    
+    with open(gff_file, 'r') as f:
+        for line in f:
+            if line.startswith('#'):
+                continue
+            parts = line.strip().split('\t')
+            if len(parts) < 9:
+                continue
+            
+            feature_type = parts[2]
+            attributes = parts[8]
+            
+            # Check if this is an oriC feature
+            if 'oriC' in feature_type or 'oriC' in attributes:
+                seqid = parts[0]
+                start = int(parts[3])
+                oric_features.append((start, seqid, line.strip()))
+    
+    if len(oric_features) == 0:
+        return None, None
+    
+    if len(oric_features) > 1:
+        print(f"⚠️  Warning: Found {len(oric_features)} oriC features in GFF file:")
+        for start, seqid, line in oric_features:
+            print(f"    - {seqid}:{start}")
+        print(f"    Using first oriC at position {oric_features[0][0]}")
+    
+    return oric_features[0][0], oric_features[0][1]
+
+
 class ReferenceSequence:
     """
     Container for a single reference sequence and its analysis results.

@@ -6,6 +6,7 @@ Provides helper functions for:
 - Summary report generation
 - Output directory management
 - Directory tree visualization
+- Sequence rotation for origin alignment
 
 GitHub: https://github.com/Aaron-Thiel/GenomeViz
 License: MIT
@@ -38,6 +39,61 @@ def validate_files(reference, assembly, gff):
     for name, path in files.items():
         if not os.path.exists(path):
             raise FileNotFoundError(f"{name} file not found: {path}")
+
+
+def rotate_sequence_and_features(reference_fasta, gff_parser, origin_position, seqid):
+    """
+    Rotate reference sequence and gene coordinates to start at origin.
+    
+    Args:
+        reference_fasta: Path to reference FASTA
+        gff_parser: GFFParser object with parsed genes
+        origin_position: Position to rotate to (becomes new position 1)
+        seqid: Sequence ID to rotate
+        
+    Returns:
+        tuple: (temp_rotated_fasta_path, updated_gff_parser)
+    """
+    from Bio import SeqIO
+    from Bio.Seq import Seq
+    import tempfile
+    
+    # Read and rotate the sequence
+    rotated_records = []
+    seq_length = None
+    
+    for record in SeqIO.parse(reference_fasta, "fasta"):
+        if record.id == seqid:
+            # Rotate sequence
+            original_seq = str(record.seq)
+            seq_length = len(original_seq)
+            rotated_seq = original_seq[origin_position:] + original_seq[:origin_position]
+            record.seq = Seq(rotated_seq)
+            print(f"  Rotated {seqid} by {origin_position:,} bp (length: {seq_length:,} bp)")
+        rotated_records.append(record)
+    
+    # Write rotated reference to temp file
+    temp_fasta = tempfile.NamedTemporaryFile(mode='w', suffix='.fasta', delete=False)
+    SeqIO.write(rotated_records, temp_fasta.name, "fasta")
+    temp_fasta.close()
+    
+    # Update gene coordinates for the rotated sequence
+    if seqid in gff_parser.genes_by_seq and seq_length:
+        print(f"  Updating coordinates for {len(gff_parser.genes_by_seq[seqid])} genes...")
+        
+        for gene in gff_parser.genes_by_seq[seqid]:
+            # Rotate coordinates
+            gene['start'] = (gene['start'] - origin_position) % seq_length
+            gene['end'] = (gene['end'] - origin_position) % seq_length
+            
+            # Handle wraparound (gene crosses the new origin)
+            if gene['end'] < gene['start']:
+                gene['end'] += seq_length
+        
+        # Re-sort genes by new start position
+        gff_parser.genes_by_seq[seqid].sort(key=lambda x: x['start'])
+    
+    return temp_fasta.name, gff_parser
 
 
 def create_summary_report(output_dir, ref_sequences, assembly_path, reference_path):

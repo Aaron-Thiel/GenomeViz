@@ -1,7 +1,7 @@
 # GenomeViz
 
 <p align="center">
-  <img src="https://img.shields.io/badge/version-1.1.0-blue.svg" alt="Version">
+  <img src="https://img.shields.io/badge/version-1.2.0-blue.svg" alt="Version">
   <img src="https://img.shields.io/badge/license-MIT-green.svg" alt="License">
   <img src="https://img.shields.io/badge/python-3.7+-blue.svg" alt="Python">
 </p>
@@ -58,7 +58,7 @@
   - Alignment status and coverage
 - **Export** as high-resolution images
 
-#### Interactive Linear Plot (NEW in v1.1.0)
+#### Interactive Linear Plot
 - **Multi-level zoom** from genome to nucleotide resolution
   - Genome level: Complete overview with all tracks
   - Gene level: Individual gene annotations visible
@@ -76,6 +76,7 @@
 
 ### Additional Features
 
+- ✅ **Origin of replication alignment** - Automatically detects and aligns visualizations to oriC
 - ✅ Automatic contig orientation detection
 - ✅ Static matplotlib plots for publication
 - ✅ Linear plots for detailed analysis (static and interactive)
@@ -195,7 +196,7 @@ Static linear plots show five tracks:
 
 These are useful for detailed analysis of specific regions and publication figures.
 
-#### Interactive Linear Plots (NEW in v1.1.0)
+#### Interactive Linear Plots
 
 The interactive linear plots provide multi-level exploration:
 

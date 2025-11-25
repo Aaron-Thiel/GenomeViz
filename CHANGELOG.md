@@ -5,6 +5,27 @@ All notable changes to GenomeViz will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.2.0] - 2025-11-25
+
+### Added
+- **Origin of Replication (oriC) Alignment**
+  - Automatic detection of origin of replication (oriC) from GFF annotations
+  - `find_oric_position()` function to locate oriC in genome annotations
+  - `rotate_sequence_and_features()` function to rotate reference sequences and gene coordinates
+  - Ensures visualizations consistently start at the biological origin of replication
+  - Improves comparability across different genome assemblies and references
+  - Works automatically when oriC annotation is present in GFF file
+
+### Changed
+- Version updated from 1.1.0 to 1.2.0
+- Enhanced README with better visualization examples and descriptions
+- Improved .gitignore to exclude additional output directories
+
+### Documentation
+- Updated README.md with improved formatting and image placement
+- Added centered visualization examples with descriptions
+- Enhanced feature descriptions for better clarity
+
 ## [1.1.0]
 
 ### Added
@@ -140,4 +161,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## Version History
 
+- **1.2.0**: Origin of replication alignment and documentation improvements
+- **1.1.0**: Interactive linear plots with multi-level zoom and modular architecture
 - **1.0.0**: Initial public release

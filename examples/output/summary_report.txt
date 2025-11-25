@@ -9,24 +9,24 @@ Reference: reference.fna
 CHROMOSOME: contig_1
 ----------------------------------------------------------------------
 Length: 1,898,076 bp
-Alignments: 22
+Alignments: 23
 Contigs aligned: 4
 Genes: 1918
 
 Gene Quality Summary:
-  Complete: 1841
+  Complete: 1812
   Incomplete: 3
-  Divergent: 0
+  Divergent: 29
   Missing: 74
 
 Average Gene Metrics:
   Coverage: 96.2%
-  Identity: 94.9%
-  Quality Score: 95.3/100
+  Identity: 94.8%
+  Quality Score: 95.2/100
 
 Misassemblies Detected:
   Inversions: 5
-  Gaps: 7
+  Gaps: 8
   Overlaps: 0
 
 PLASMID: contig_2
