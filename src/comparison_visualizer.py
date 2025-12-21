@@ -37,7 +37,8 @@ class ScaffoldSequence:
     def __init__(self, scaffold_name: str, ref_start: int, ref_end: int,
                  overlap_regions: List[OverlapRegion],
                  gene_results: Optional[List[GeneComparisonResult]] = None,
-                 reference_length: int = None):
+                 reference_length: int = None,
+                 genes_are_reference_coords: bool = False):
         """
         Initialize scaffold sequence for visualization.
 
@@ -48,6 +49,9 @@ class ScaffoldSequence:
             overlap_regions: OverlapRegion objects for this scaffold
             gene_results: Gene comparison results (scaffold genes vs contig coverage)
             reference_length: Full length of reference genome (for context visualization)
+            genes_are_reference_coords: If True, gene coordinates are already in reference
+                                        coordinates (from reference GFF fallback).
+                                        If False, genes are in scaffold-local coordinates.
         """
         self.seqid = scaffold_name
         self.seq_type = 'scaffold'
@@ -56,11 +60,22 @@ class ScaffoldSequence:
         self.ref_start = ref_start
         self.ref_end = ref_end
         self.scaffold_length = ref_end - ref_start
+        
+        # Track if genes are in reference coordinates (don't add ref_start)
+        self.genes_are_reference_coords = genes_are_reference_coords
 
         # Full reference length for context visualization
         # If not provided, use scaffold region as the visualization length
         self.reference_length = reference_length if reference_length else (ref_end - ref_start)
         self.length = self.reference_length  # For visualization purposes
+
+        # Store the actual scaffold alignment regions (not just min/max)
+        # This is crucial for correct gap detection - we only want to show
+        # gaps WITHIN scaffold regions, not between separate alignment blocks
+        self.scaffold_regions = self._extract_scaffold_regions(overlap_regions)
+        print(f"      Scaffold aligns to {len(self.scaffold_regions)} region(s) on reference")
+        for i, (start, end) in enumerate(self.scaffold_regions):
+            print(f"        Region {i+1}: {start:,} - {end:,} bp ({end-start:,} bp)")
 
         # Convert contig overlaps to alignment format (like assembly alignments)
         self.alignments = self._build_contig_alignments(overlap_regions)
@@ -75,6 +90,38 @@ class ScaffoldSequence:
 
         # Build misassemblies (gaps between contigs, overlaps, inversions)
         self.misassemblies = self._detect_misassemblies(overlap_regions)
+
+    def _extract_scaffold_regions(self, overlap_regions: List[OverlapRegion]) -> List[tuple]:
+        """
+        Extract the actual scaffold alignment regions on the reference.
+        
+        Returns a list of (start, end) tuples for each separate alignment block.
+        These are used to determine which parts of the reference this scaffold
+        actually covers - gaps between these regions should NOT be marked as "missing".
+        """
+        regions = []
+        for region in overlap_regions:
+            regions.append((region.scaffold_ref_start, region.scaffold_ref_end))
+        
+        # Sort by start position and merge overlapping regions
+        regions.sort(key=lambda x: x[0])
+        
+        merged = []
+        for start, end in regions:
+            if merged and start <= merged[-1][1] + 1:
+                # Overlapping or adjacent - merge
+                merged[-1] = (merged[-1][0], max(merged[-1][1], end))
+            else:
+                merged.append((start, end))
+        
+        return merged
+
+    def is_within_scaffold_region(self, pos: int) -> bool:
+        """Check if a position falls within any scaffold alignment region."""
+        for start, end in self.scaffold_regions:
+            if start <= pos <= end:
+                return True
+        return False
 
     def _build_contig_alignments(self, overlap_regions: List[OverlapRegion]) -> List[dict]:
         """Convert contig overlaps to alignment format using absolute reference coordinates."""
@@ -113,12 +160,22 @@ class ScaffoldSequence:
             else:  # missing
                 quality_score = 30
 
-            # Convert scaffold-local gene coordinates to absolute reference coordinates
-            # gene['start'] and gene['end'] are scaffold-local, add ref_start to get absolute
+            # Handle coordinate transformation based on gene source:
+            # - Scaffold genes: scaffold-local coordinates, need to add ref_start
+            # - Reference genes (fallback): already in reference coordinates, DON'T add ref_start
+            if self.genes_are_reference_coords:
+                # Reference genes already have absolute coordinates
+                gene_start = gene['start']
+                gene_end = gene['end']
+            else:
+                # Scaffold genes need conversion to absolute reference position
+                gene_start = gene['start'] + self.ref_start
+                gene_end = gene['end'] + self.ref_start
+
             gene_stats.append({
                 'name': gene['name'],
-                'start': gene['start'] + self.ref_start,  # Convert to absolute reference position
-                'end': gene['end'] + self.ref_start,
+                'start': gene_start,
+                'end': gene_end,
                 'scaffold_local_start': gene['start'],  # Keep original for gene alignment
                 'scaffold_local_end': gene['end'],
                 'length': gene['length'],
@@ -132,7 +189,13 @@ class ScaffoldSequence:
         return gene_stats
 
     def _detect_misassemblies(self, overlap_regions: List[OverlapRegion]) -> List[dict]:
-        """Detect gaps, overlaps, and inversions between contigs using absolute reference coordinates."""
+        """
+        Detect gaps, overlaps, and inversions between contigs using absolute reference coordinates.
+        
+        IMPORTANT: Only reports gaps/overlaps that fall WITHIN scaffold alignment regions.
+        Gaps between separate scaffold alignment blocks are NOT reported as they are
+        expected (covered by other scaffolds).
+        """
         misassemblies = []
 
         # Collect all contig regions sorted by position (using absolute coordinates)
@@ -149,20 +212,31 @@ class ScaffoldSequence:
         all_contigs.sort(key=lambda x: x['start'])
 
         # Detect gaps and overlaps between consecutive contigs
+        # But ONLY if the gap falls within a scaffold alignment region
         for i in range(len(all_contigs) - 1):
             curr = all_contigs[i]
             next_c = all_contigs[i + 1]
 
             gap = next_c['start'] - curr['end']
+            gap_start = curr['end']
+            gap_end = next_c['start']
 
-            if gap > 100:  # Gap
+            # Check if this gap falls within a scaffold region
+            # A gap is only valid if both ends are within the same scaffold region
+            gap_within_scaffold = False
+            for region_start, region_end in self.scaffold_regions:
+                if gap_start >= region_start and gap_end <= region_end:
+                    gap_within_scaffold = True
+                    break
+
+            if gap > 100 and gap_within_scaffold:  # Gap within scaffold region
                 misassemblies.append({
                     'type': 'gap',
                     'ref_start': curr['end'],
                     'ref_end': next_c['start'],
                     'size': gap
                 })
-            elif gap < -100:  # Overlap
+            elif gap < -100:  # Overlap (always report)
                 misassemblies.append({
                     'type': 'overlap',
                     'ref_start': next_c['start'],
@@ -291,6 +365,8 @@ class ComparisonCircularVisualizer:
         # ====================================================================
         # RING 2: ALIGNMENT STATUS (middle ring) - How contigs cover the scaffold
         # Shows complete/duplicated/inverted/missing status
+        # IMPORTANT: Only show status for positions within actual scaffold alignment regions
+        # Gaps between separate scaffold alignment blocks are NOT marked as "missing"
         # ====================================================================
 
         status_colors = {
@@ -300,31 +376,36 @@ class ComparisonCircularVisualizer:
             'missing': 'rgb(149, 165, 166)'     # Gray
         }
 
-        # Build segments ONLY within scaffold region (for efficiency)
+        # Build segments ONLY within actual scaffold alignment regions
+        # This prevents marking regions between separate alignment blocks as "missing"
         segments = []
-        current_segment = None
+        
+        for region_start, region_end in scaffold_seq.scaffold_regions:
+            current_segment = None
+            
+            for pos in range(region_start, region_end):
+                if pos >= len(coverage):
+                    continue
+                    
+                if coverage[pos] == 0:
+                    status = 'missing'
+                elif coverage[pos] > 1:
+                    status = 'duplicated'
+                elif pos in strand_info and '-' in strand_info[pos]:
+                    status = 'inverted'
+                else:
+                    status = 'complete'
 
-        # Only process positions within the scaffold region
-        for pos in range(scaffold_start, scaffold_end):
-            if coverage[pos] == 0:
-                status = 'missing'
-            elif coverage[pos] > 1:
-                status = 'duplicated'
-            elif pos in strand_info and '-' in strand_info[pos]:
-                status = 'inverted'
-            else:
-                status = 'complete'
+                if current_segment is None:
+                    current_segment = {'start': pos, 'end': pos, 'status': status}
+                elif current_segment['status'] == status:
+                    current_segment['end'] = pos
+                else:
+                    segments.append(current_segment)
+                    current_segment = {'start': pos, 'end': pos, 'status': status}
 
-            if current_segment is None:
-                current_segment = {'start': pos, 'end': pos, 'status': status}
-            elif current_segment['status'] == status:
-                current_segment['end'] = pos
-            else:
+            if current_segment is not None:
                 segments.append(current_segment)
-                current_segment = {'start': pos, 'end': pos, 'status': status}
-
-        if current_segment is not None:
-            segments.append(current_segment)
 
         # Create traces for alignment status (Ring 2)
         for status_type in ['complete', 'duplicated', 'inverted', 'missing']:
@@ -563,6 +644,7 @@ class ComparisonCircularVisualizer:
 
         # ====================================================================
         # RING 2: ALIGNMENT STATUS (middle)
+        # IMPORTANT: Only show status for positions within actual scaffold alignment regions
         # ====================================================================
 
         status_colors = {
@@ -573,29 +655,34 @@ class ComparisonCircularVisualizer:
         }
 
         segments = []
-        current_segment = None
 
-        # Only process positions within scaffold region
-        for pos in range(scaffold_start, scaffold_end):
-            if coverage[pos] == 0:
-                status = 'missing'
-            elif coverage[pos] > 1:
-                status = 'duplicated'
-            elif pos in strand_info and '-' in strand_info[pos]:
-                status = 'inverted'
-            else:
-                status = 'complete'
+        # Only process positions within actual scaffold alignment regions
+        for region_start, region_end in scaffold_seq.scaffold_regions:
+            current_segment = None
+            
+            for pos in range(region_start, region_end):
+                if pos >= len(coverage):
+                    continue
+                    
+                if coverage[pos] == 0:
+                    status = 'missing'
+                elif coverage[pos] > 1:
+                    status = 'duplicated'
+                elif pos in strand_info and '-' in strand_info[pos]:
+                    status = 'inverted'
+                else:
+                    status = 'complete'
 
-            if current_segment is None:
-                current_segment = {'start': pos, 'end': pos, 'status': status}
-            elif current_segment['status'] == status:
-                current_segment['end'] = pos
-            else:
+                if current_segment is None:
+                    current_segment = {'start': pos, 'end': pos, 'status': status}
+                elif current_segment['status'] == status:
+                    current_segment['end'] = pos
+                else:
+                    segments.append(current_segment)
+                    current_segment = {'start': pos, 'end': pos, 'status': status}
+
+            if current_segment is not None:
                 segments.append(current_segment)
-                current_segment = {'start': pos, 'end': pos, 'status': status}
-
-        if current_segment is not None:
-            segments.append(current_segment)
 
         for segment in segments:
             start_angle = (segment['start'] / ref_length) * 2 * np.pi
@@ -913,6 +1000,478 @@ class ComparisonLinearVisualizer:
 
         plt.savefig(output_file, dpi=300, bbox_inches='tight')
         plt.close()
+
+
+class ComparisonInteractiveLinearVisualizer:
+    """
+    Create interactive linear plots for scaffold-contig comparison using Plotly.
+    
+    Uses the same structure as the standard InteractiveLinearVisualizer:
+    - Track 1: Gene quality - scaffold/reference genes colored by contig coverage
+    - Track 2: Contig mapping - which contigs cover the scaffold
+    - Track 3: Coverage depth - how many contigs cover each position
+    - Track 4: Alignment identity - identity of contig alignments
+    - Track 5: Misassemblies - gaps, overlaps, inversions between contigs
+    """
+
+    @staticmethod
+    def create_interactive_linear_plot(scaffold_seq: ScaffoldSequence, output_file: Path,
+                                        reference_seqid: str = None):
+        """Create interactive linear plot using Plotly."""
+        import json
+        import plotly.graph_objects as go
+        from plotly.subplots import make_subplots
+        
+        print(f"  Creating interactive linear plot: {output_file}")
+        
+        # Create subplot figure with 5 tracks
+        fig = make_subplots(
+            rows=5, cols=1,
+            shared_xaxes=True,
+            vertical_spacing=0.02,
+            row_heights=[0.25, 0.20, 0.20, 0.15, 0.20],
+            subplot_titles=(
+                'Gene Quality (by Contig Coverage)',
+                'Contig Mapping',
+                'Coverage Depth',
+                'Alignment Identity',
+                'Misassemblies'
+            )
+        )
+        
+        # ====================================================================
+        # TRACK 1: GENE QUALITY
+        # ====================================================================
+        
+        quality_colors = {
+            'excellent': 'rgb(46, 204, 113)',
+            'good': 'rgb(241, 196, 15)',
+            'fair': 'rgb(230, 126, 34)',
+            'poor': 'rgb(231, 76, 60)'
+        }
+        
+        for quality_level in ['excellent', 'good', 'fair', 'poor']:
+            x_positions = []
+            widths = []
+            heights = []
+            hover_text = []
+            
+            for gene in scaffold_seq.gene_stats:
+                quality = gene['quality_score']
+                
+                if quality_level == 'excellent' and quality < 95:
+                    continue
+                elif quality_level == 'good' and (quality < 85 or quality >= 95):
+                    continue
+                elif quality_level == 'fair' and (quality < 70 or quality >= 85):
+                    continue
+                elif quality_level == 'poor' and quality >= 70:
+                    continue
+                
+                x_positions.append((gene['start'] + gene['end']) / 2)
+                widths.append(gene['end'] - gene['start'])
+                heights.append(quality)
+                
+                hover = (f"<b>{gene['name']}</b><br>"
+                        f"Position: {gene['start']:,}-{gene['end']:,} bp<br>"
+                        f"Length: {gene['length']:,} bp<br>"
+                        f"Quality: {quality:.1f}/100<br>"
+                        f"Coverage: {gene['coverage_pct']:.1f}%<br>"
+                        f"Identity: {gene['avg_identity']:.1f}%<br>"
+                        f"Status: {gene['status']}")
+                hover_text.append(hover)
+            
+            if x_positions:
+                fig.add_trace(go.Bar(
+                    x=x_positions,
+                    y=heights,
+                    width=widths,
+                    name=f'{quality_level.capitalize()}',
+                    marker=dict(
+                        color=quality_colors[quality_level],
+                        line=dict(color='rgba(0,0,0,0.3)', width=0)
+                    ),
+                    hovertext=hover_text,
+                    hoverinfo='text',
+                    legendgroup='Track 1: Gene Quality',
+                    legendgrouptitle=dict(text="<b>Track 1: Gene Quality</b>", font=dict(size=11)),
+                    showlegend=True
+                ), row=1, col=1)
+        
+        # ====================================================================
+        # TRACK 2: CONTIG MAPPING
+        # ====================================================================
+        
+        # Get unique contigs and assign colors
+        contigs_in_order = []
+        for aln in sorted(scaffold_seq.alignments, key=lambda x: x['ref_start']):
+            if aln['is_primary'] and aln['query_name'] not in contigs_in_order:
+                contigs_in_order.append(aln['query_name'])
+        
+        # Use color palette
+        if len(contigs_in_order) <= 12:
+            import plotly.express as px
+            colors = px.colors.qualitative.Set3[:len(contigs_in_order)]
+        else:
+            colors = [f'hsl({i * 360 / len(contigs_in_order)}, 70%, 60%)'
+                     for i in range(len(contigs_in_order))]
+        
+        contig_colors = dict(zip(contigs_in_order, colors))
+        
+        # Group by contig
+        contig_data = {}
+        for aln in scaffold_seq.alignments:
+            if aln['is_primary']:
+                contig_name = aln['query_name']
+                if contig_name not in contig_data:
+                    contig_data[contig_name] = {'x': [], 'widths': [], 'hover': []}
+                
+                center_x = (aln['ref_start'] + aln['ref_end']) / 2
+                width = aln['ref_end'] - aln['ref_start']
+                
+                contig_data[contig_name]['x'].append(center_x)
+                contig_data[contig_name]['widths'].append(width)
+                
+                hover = (f"<b>{contig_name}</b><br>"
+                        f"Ref: {aln['ref_start']:,}-{aln['ref_end']:,} bp<br>"
+                        f"Contig: {aln['query_start']:,}-{aln['query_end']:,} bp<br>"
+                        f"Length: {aln['ref_end'] - aln['ref_start']:,} bp<br>"
+                        f"Identity: {aln['identity']:.2f}%<br>"
+                        f"Strand: {aln['strand']}")
+                contig_data[contig_name]['hover'].append(hover)
+        
+        # Add bar traces for each contig
+        for contig_name, data in contig_data.items():
+            color = contig_colors.get(contig_name, 'rgb(136, 136, 136)')
+            fig.add_trace(go.Bar(
+                x=data['x'],
+                y=[1] * len(data['x']),
+                width=data['widths'],
+                name=contig_name,
+                marker=dict(
+                    color=color,
+                    line=dict(color='rgba(0,0,0,0.4)', width=1)
+                ),
+                hovertext=data['hover'],
+                hoverinfo='text',
+                legendgroup='Track 2: Contig Mapping',
+                legendgrouptitle=dict(text="<b>Track 2: Contig Mapping</b>", font=dict(size=11)),
+                showlegend=True
+            ), row=2, col=1)
+        
+        # ====================================================================
+        # TRACK 3: COVERAGE
+        # ====================================================================
+        
+        coverage = np.zeros(scaffold_seq.length)
+        for aln in scaffold_seq.alignments:
+            if aln['is_primary']:
+                start = max(0, aln['ref_start'])
+                end = min(scaffold_seq.length, aln['ref_end'])
+                coverage[start:end] += 1
+        
+        # Downsample if genome is large for performance
+        window_size = max(1, scaffold_seq.length // 10000)
+        if window_size > 1:
+            downsampled_coverage = []
+            downsampled_positions = []
+            for i in range(0, scaffold_seq.length, window_size):
+                window_end = min(i + window_size, scaffold_seq.length)
+                downsampled_coverage.append(np.mean(coverage[i:window_end]))
+                downsampled_positions.append(i + window_size // 2)
+        else:
+            downsampled_coverage = coverage
+            downsampled_positions = np.arange(scaffold_seq.length)
+        
+        fig.add_trace(go.Scatter(
+            x=downsampled_positions,
+            y=downsampled_coverage,
+            mode='lines',
+            name='Coverage',
+            line=dict(color='rgb(52, 152, 219)', width=1.5),
+            fill='tozeroy',
+            fillcolor='rgba(52, 152, 219, 0.3)',
+            hovertemplate='Position: %{x:,} bp<br>Coverage: %{y:.1f}x<extra></extra>',
+            legendgroup='Track 3: Coverage Depth',
+            legendgrouptitle=dict(text="<b>Track 3: Coverage Depth</b>", font=dict(size=11)),
+            showlegend=True
+        ), row=3, col=1)
+        
+        # ====================================================================
+        # TRACK 4: IDENTITY
+        # ====================================================================
+        
+        identity_x = []
+        identity_widths = []
+        identity_heights = []
+        identity_hover = []
+        
+        for aln in scaffold_seq.alignments:
+            if aln['is_primary']:
+                center_x = (aln['ref_start'] + aln['ref_end']) / 2
+                width = aln['ref_end'] - aln['ref_start']
+                
+                identity_x.append(center_x)
+                identity_widths.append(width)
+                identity_heights.append(aln['identity'])
+                
+                hover = (f"Position: {aln['ref_start']:,}-{aln['ref_end']:,} bp<br>"
+                        f"Length: {width:,} bp<br>"
+                        f"Identity: {aln['identity']:.2f}%<br>"
+                        f"Contig: {aln['query_name']}")
+                identity_hover.append(hover)
+        
+        if identity_x:
+            fig.add_trace(go.Bar(
+                x=identity_x,
+                y=identity_heights,
+                width=identity_widths,
+                name='Identity',
+                marker=dict(
+                    color='rgb(155, 89, 182)',
+                    line=dict(color='rgba(0,0,0,0.3)', width=0.5)
+                ),
+                hovertext=identity_hover,
+                hoverinfo='text',
+                legendgroup='Track 4: Alignment Identity',
+                legendgrouptitle=dict(text="<b>Track 4: Alignment Identity</b>", font=dict(size=11)),
+                showlegend=True
+            ), row=4, col=1)
+        
+        # Add reference lines
+        fig.add_hline(y=95, line=dict(color='green', dash='dash', width=1),
+                     opacity=0.5, row=4, col=1)
+        fig.add_hline(y=90, line=dict(color='orange', dash='dash', width=1),
+                     opacity=0.5, row=4, col=1)
+        
+        # ====================================================================
+        # TRACK 5: MISASSEMBLIES
+        # ====================================================================
+        
+        y_pos_map = {'inversion': 0.85, 'gap': 0.6, 'overlap': 0.35}
+        color_map = {
+            'inversion': 'rgb(231, 76, 60)',
+            'gap': 'rgb(243, 156, 18)',
+            'overlap': 'rgb(155, 89, 182)'
+        }
+        
+        # Add misassembly markers
+        for mis_type in ['inversion', 'gap', 'overlap']:
+            misassemblies = [m for m in scaffold_seq.misassemblies if m['type'] == mis_type]
+            
+            if misassemblies:
+                x_positions = []
+                widths = []
+                hover_text = []
+                
+                for mis in misassemblies:
+                    center_x = (mis['ref_start'] + mis['ref_end']) / 2
+                    width = mis['ref_end'] - mis['ref_start']
+                    
+                    x_positions.append(center_x)
+                    widths.append(width)
+                    
+                    hover = (f"<b>{mis_type.capitalize()}</b><br>"
+                            f"Position: {mis['ref_start']:,}-{mis['ref_end']:,} bp<br>"
+                            f"Length: {mis['size']:,} bp")
+                    hover_text.append(hover)
+                
+                fig.add_trace(go.Bar(
+                    x=x_positions,
+                    y=[0.15] * len(x_positions),
+                    width=widths,
+                    base=[y_pos_map[mis_type]] * len(x_positions),
+                    name=mis_type.capitalize(),
+                    marker=dict(
+                        color=color_map[mis_type],
+                        line=dict(color='rgba(0,0,0,0.3)', width=1)
+                    ),
+                    hovertext=hover_text,
+                    hoverinfo='text',
+                    legendgroup='Track 5: Misassemblies',
+                    legendgrouptitle=dict(text="<b>Track 5: Misassemblies</b>", font=dict(size=11)),
+                    showlegend=True,
+                    orientation='v'
+                ), row=5, col=1)
+        
+        # Add contig indicator bars at bottom of track
+        for contig_name, data in contig_data.items():
+            color = contig_colors.get(contig_name, 'rgb(136, 136, 136)')
+            
+            for i, x in enumerate(data['x']):
+                fig.add_trace(go.Bar(
+                    x=[x],
+                    y=[0.1],
+                    width=[data['widths'][i]],
+                    base=[0],
+                    name=contig_name,
+                    marker=dict(
+                        color=color,
+                        opacity=0.7,
+                        line=dict(color='rgba(0,0,0,0.3)', width=0.5)
+                    ),
+                    hovertext=[f"<b>Contig: {contig_name}</b>"],
+                    hoverinfo='text',
+                    legendgroup='Contig Indicators',
+                    showlegend=False,
+                    orientation='v'
+                ), row=5, col=1)
+        
+        # ====================================================================
+        # CONFIGURE LAYOUT
+        # ====================================================================
+        
+        ref_info = f' (Ref: {reference_seqid})' if reference_seqid else ''
+        if scaffold_seq.length > 10000:
+            size_str = f'{scaffold_seq.length/1000:.1f} kb'
+        else:
+            size_str = f'{scaffold_seq.length:,} bp'
+        
+        fig.update_layout(
+            title=dict(
+                text=f'Scaffold: {scaffold_seq.seqid}{ref_info} ({size_str})',
+                x=0.5,
+                xanchor='center',
+                font=dict(size=16, family='Arial, sans-serif')
+            ),
+            hovermode='x unified',
+            height=1200,
+            width=1600,
+            showlegend=True,
+            legend=dict(
+                orientation="v",
+                yanchor="top",
+                y=1,
+                xanchor="left",
+                x=1.01,
+                font=dict(size=10, family='Arial, sans-serif')
+            ),
+            font=dict(family='Arial, sans-serif')
+        )
+        
+        # Update axes
+        fig.update_xaxes(title_text="Position (bp)", row=5, col=1, rangeslider=dict(visible=True))
+        fig.update_xaxes(showgrid=True, gridwidth=1, gridcolor='lightgray')
+        
+        fig.update_yaxes(title_text="Quality", row=1, col=1, range=[0, 100])
+        fig.update_yaxes(title_text="Contigs", row=2, col=1, range=[0, 1.1], showticklabels=False)
+        fig.update_yaxes(title_text="Coverage", row=3, col=1)
+        fig.update_yaxes(title_text="Identity (%)", row=4, col=1, range=[85, 100])
+        fig.update_yaxes(title_text="Type", row=5, col=1, range=[0, 1.05],
+                        tickvals=[0.05, 0.42, 0.67, 0.92],
+                        ticktext=['Contig', 'Overlap', 'Gap', 'Inversion'])
+        
+        # Configure zoom and pan
+        fig.update_xaxes(
+            autorange=True,
+            range=[0, scaffold_seq.length],
+            constrain="domain"
+        )
+        
+        # Save HTML with config
+        config = {
+            'scrollZoom': True,
+            'displayModeBar': True,
+            'displaylogo': False,
+            'modeBarButtonsToAdd': ['drawline', 'drawopenpath', 'eraseshape'],
+            'toImageButtonOptions': {
+                'format': 'png',
+                'filename': f'{scaffold_seq.seqid}_interactive_linear',
+                'height': 1200,
+                'width': 1600,
+                'scale': 2
+            }
+        }
+        
+        fig.write_html(output_file, config=config)
+        
+        # Add help button
+        ComparisonInteractiveLinearVisualizer._add_help_button(output_file)
+    
+    @staticmethod
+    def _add_help_button(html_file):
+        """Add help button to the interactive linear plot."""
+        
+        # Read the HTML file
+        with open(html_file, 'r', encoding='utf-8') as f:
+            html_content = f.read()
+        
+        help_html = '''
+        <style>
+        .help-button {
+            position: fixed;
+            top: 10px;
+            right: 10px;
+            z-index: 1000;
+            background: #3498db;
+            color: white;
+            border: none;
+            border-radius: 50%;
+            width: 30px;
+            height: 30px;
+            cursor: pointer;
+            font-size: 18px;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.2);
+        }
+        .help-button:hover {
+            background: #2980b9;
+        }
+        .help-popup {
+            display: none;
+            position: fixed;
+            top: 50px;
+            right: 10px;
+            z-index: 999;
+            background: white;
+            padding: 15px;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.2);
+            max-width: 350px;
+            font-family: Arial, sans-serif;
+            font-size: 13px;
+        }
+        .help-popup h3 {
+            margin-top: 0;
+            color: #2c3e50;
+        }
+        .help-popup ul {
+            padding-left: 20px;
+        }
+        .help-popup li {
+            margin: 8px 0;
+        }
+        </style>
+        <button class="help-button" onclick="toggleHelp()">?</button>
+        <div class="help-popup" id="helpPopup">
+            <h3>Navigation Guide</h3>
+            <ul>
+                <li><b>Zoom:</b> Use scroll wheel or drag the range slider at the bottom</li>
+                <li><b>Pan:</b> Click and drag on the plot</li>
+                <li><b>Reset:</b> Double-click to reset view</li>
+                <li><b>Hover:</b> Move mouse over elements for details</li>
+            </ul>
+            <h4>Track Information</h4>
+            <ul>
+                <li><b>Track 1:</b> Gene quality (green=excellent, yellow=good, orange=fair, red=poor)</li>
+                <li><b>Track 2:</b> Contig positions on reference</li>
+                <li><b>Track 3:</b> Coverage depth</li>
+                <li><b>Track 4:</b> Alignment identity (%)</li>
+                <li><b>Track 5:</b> Issues (gaps, inversions, overlaps)</li>
+            </ul>
+        </div>
+        <script>
+        function toggleHelp() {
+            var popup = document.getElementById('helpPopup');
+            popup.style.display = popup.style.display === 'none' ? 'block' : 'none';
+        }
+        </script>
+        '''
+        
+        # Insert before closing body tag
+        html_content = html_content.replace('</body>', help_html + '\n</body>')
+        
+        with open(html_file, 'w', encoding='utf-8') as f:
+            f.write(html_content)
 
 
 class ComparisonIndexGenerator:

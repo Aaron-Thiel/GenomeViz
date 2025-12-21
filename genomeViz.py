@@ -299,6 +299,7 @@ For more information: https://github.com/Aaron-Thiel/GenomeViz
         from src.comparison_visualizer import (
             ScaffoldSequence,
             ComparisonLinearVisualizer,
+            ComparisonInteractiveLinearVisualizer,
             ComparisonCircularVisualizer,
             ComparisonIndexGenerator,
             ComparisonGeneAlignmentVisualizer
@@ -396,6 +397,8 @@ For more information: https://github.com/Aaron-Thiel/GenomeViz
             # Analyze gene integrity
             # Priority: scaffold GFF > reference GFF (required --gff)
             gene_results = None
+            genes_are_reference_coords = False  # Track if genes are in reference coordinates
+            
             if multi_gff.has_genes('scaffold'):
                 # Use scaffold genes if scaffold GFF is provided
                 gene_analyzer = GeneIntegrityAnalyzer(overlap_regions, multi_gff)
@@ -404,17 +407,27 @@ For more information: https://github.com/Aaron-Thiel/GenomeViz
                 )
                 if gene_results:
                     all_gene_results[scaffold_name] = gene_results
+                    genes_are_reference_coords = False  # Scaffold genes are scaffold-local
                     print(f"      Using {len(gene_results)} scaffold genes")
             
             # Fall back to reference genes if scaffold genes not available
             # This happens when: no scaffold GFF, or scaffold was RC'd (coords don't match)
             if not gene_results and multi_gff.has_genes('reference'):
                 gene_analyzer = GeneIntegrityAnalyzer(overlap_regions, multi_gff)
-                gene_results = gene_analyzer.analyze_reference_genes_in_range(
-                    ref_start, ref_end, reference_seqid, overlap_regions
-                )
+                
+                # Get genes from EACH scaffold alignment region separately
+                # This prevents fetching genes from regions between scaffold alignments
+                gene_results = []
+                for region in overlap_regions:
+                    region_genes = gene_analyzer.analyze_reference_genes_in_range(
+                        region.scaffold_ref_start, region.scaffold_ref_end, 
+                        reference_seqid, [region]  # Only pass this region for coverage analysis
+                    )
+                    gene_results.extend(region_genes)
+                
                 if gene_results:
                     all_gene_results[scaffold_name] = gene_results
+                    genes_are_reference_coords = True  # Reference genes already have absolute coords
                     print(f"      Using {len(gene_results)} reference genes in region")
 
             # Create ScaffoldSequence object for visualization
@@ -425,16 +438,25 @@ For more information: https://github.com/Aaron-Thiel/GenomeViz
                 ref_end=ref_end,
                 overlap_regions=overlap_regions,
                 gene_results=gene_results,
-                reference_length=total_reference_length
+                reference_length=total_reference_length,
+                genes_are_reference_coords=genes_are_reference_coords
             )
 
             # Create linear visualization
             if not args.no_comparison_linear:
+                # Static PNG
                 ComparisonLinearVisualizer.create_linear_plot(
                     scaffold_seq,
                     scaffold_dir / f'{safe_name}_linear.png',
                     reference_seqid=reference_seqid
                 )
+                # Interactive HTML
+                if not args.no_interactive_linear:
+                    ComparisonInteractiveLinearVisualizer.create_interactive_linear_plot(
+                        scaffold_seq,
+                        scaffold_dir / f'{safe_name}_interactive_linear.html',
+                        reference_seqid=reference_seqid
+                    )
 
             # Create circular visualizations
             circular_html_file = None

@@ -256,11 +256,11 @@ class GeneIntegrityAnalyzer:
                 coverage_pct, len(unique_contigs), gaps, gene_length
             )
 
-            # Create gene copy with coordinates relative to scaffold region
-            # (for visualization purposes, offset by ref_start)
+            # Create gene copy - keep original reference coordinates
+            # since we're using reference genes as fallback and they should
+            # be displayed at their actual reference positions
             gene_for_viz = gene.copy()
-            gene_for_viz['start'] = gene['start'] - ref_start  # Convert to scaffold-local
-            gene_for_viz['end'] = gene['end'] - ref_start
+            # Don't convert coordinates - keep them in reference coordinate space
 
             results.append(GeneComparisonResult(
                 gene=gene_for_viz,
