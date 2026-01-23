@@ -1,4 +1,11 @@
 # Ignore the top-level 'setup' folder
 /setup/
+/del/
+/test/
+/examples/input_validation/
 /examples/output_1/
+/examples/output_2/
+/examples/output_test_new/
+/examples/output_validation/
+/examples/output_validation_fixed/
 src/__pycache__/

@@ -161,9 +161,14 @@ class ScaffoldSequence:
                 quality_score = 30
 
             # Handle coordinate transformation based on gene source:
-            # - Scaffold genes: scaffold-local coordinates, need to add ref_start
-            # - Reference genes (fallback): already in reference coordinates, DON'T add ref_start
-            if self.genes_are_reference_coords:
+            # Priority 1: Use ref_start/ref_end if set by analyze_scaffold_genes_via_reference
+            # Priority 2: Use genes_are_reference_coords flag
+            # Priority 3: Add ref_start offset for scaffold-local coords
+            if 'ref_start' in gene and gene['ref_start'] is not None:
+                # Gene has explicit reference coordinates (from scaffold gene mapping)
+                gene_start = gene['ref_start']
+                gene_end = gene['ref_end']
+            elif self.genes_are_reference_coords:
                 # Reference genes already have absolute coordinates
                 gene_start = gene['start']
                 gene_end = gene['end']
@@ -183,7 +188,8 @@ class ScaffoldSequence:
                 'quality_score': min(100, max(0, quality_score)),
                 'coverage_pct': result.coverage_pct,
                 'avg_identity': result.identity,
-                'status': result.status
+                'status': result.status,
+                'product': gene.get('product', '')
             })
 
         return gene_stats
@@ -622,8 +628,20 @@ class ComparisonCircularVisualizer:
         # ====================================================================
 
         for gene in scaffold_seq.gene_stats:
-            start_angle = (gene['start'] / ref_length) * 2 * np.pi
-            end_angle = (gene['end'] / ref_length) * 2 * np.pi
+            # Calculate angles - Wedge uses degrees with 0 at East (3 o'clock), counterclockwise
+            # To match Plotly (and have 0 at top going clockwise), transform:
+            # new_angle = 90 - (position/length * 360)
+            # This puts 0 at North and goes clockwise
+            start_angle_raw = (gene['start'] / ref_length) * 360
+            end_angle_raw = (gene['end'] / ref_length) * 360
+            
+            # Transform to 0-at-North, clockwise
+            start_angle = 90 - start_angle_raw
+            end_angle = 90 - end_angle_raw
+            
+            # Wedge needs start < end, so swap if needed (since we flipped direction)
+            if start_angle > end_angle:
+                start_angle, end_angle = end_angle, start_angle
 
             quality = gene['quality_score']
             if quality >= 95:
@@ -636,7 +654,7 @@ class ComparisonCircularVisualizer:
                 color = '#e74c3c'
 
             wedge = Wedge((0, 0), quality_track_r,
-                         np.degrees(start_angle), np.degrees(end_angle),
+                         start_angle, end_angle,
                          width=quality_track_width, facecolor=color,
                          edgecolor='none', alpha=0.8,
                          transform=ax.transData._b)
@@ -685,12 +703,18 @@ class ComparisonCircularVisualizer:
                 segments.append(current_segment)
 
         for segment in segments:
-            start_angle = (segment['start'] / ref_length) * 2 * np.pi
-            end_angle = ((segment['end'] + 1) / ref_length) * 2 * np.pi
+            # Transform to 0-at-North, clockwise (same as Ring 1)
+            start_angle_raw = (segment['start'] / ref_length) * 360
+            end_angle_raw = ((segment['end'] + 1) / ref_length) * 360
+            start_angle = 90 - start_angle_raw
+            end_angle = 90 - end_angle_raw
+            if start_angle > end_angle:
+                start_angle, end_angle = end_angle, start_angle
+            
             color = status_colors[segment['status']]
 
             wedge = Wedge((0, 0), status_track_r,
-                         np.degrees(start_angle), np.degrees(end_angle),
+                         start_angle, end_angle,
                          width=status_track_width, facecolor=color,
                          edgecolor='none', alpha=0.8,
                          transform=ax.transData._b)
@@ -705,11 +729,16 @@ class ComparisonCircularVisualizer:
                 contig_name = aln['query_name']
                 color = contig_colors.get(contig_name, '#888888')
 
-                start_angle = (aln['ref_start'] / ref_length) * 2 * np.pi
-                end_angle = (aln['ref_end'] / ref_length) * 2 * np.pi
+                # Transform to 0-at-North, clockwise (same as Ring 1 and 2)
+                start_angle_raw = (aln['ref_start'] / ref_length) * 360
+                end_angle_raw = (aln['ref_end'] / ref_length) * 360
+                start_angle = 90 - start_angle_raw
+                end_angle = 90 - end_angle_raw
+                if start_angle > end_angle:
+                    start_angle, end_angle = end_angle, start_angle
 
                 wedge = Wedge((0, 0), contig_track_r,
-                            np.degrees(start_angle), np.degrees(end_angle),
+                            start_angle, end_angle,
                             width=contig_track_width, facecolor=color,
                             edgecolor='black', linewidth=0.5, alpha=0.7,
                             transform=ax.transData._b)

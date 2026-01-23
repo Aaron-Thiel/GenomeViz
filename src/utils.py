@@ -388,16 +388,14 @@ def create_visualizations(ref_sequences, seqid_dirs, aligner, args):
     interactive_linear_files = []
 
     # Conditionally import visualizers based on flags
-    if not args.no_circular or not args.no_interactive:
+    if not args.no_static or not args.no_interactive:
         from src.circular_visualizer import CircularVisualizer
         from src.interactive_circular_visualizer import InteractiveCircularVisualizer
-
-    if not args.no_linear or not args.no_interactive_linear:
         from src.linear_visualizer import LinearVisualizer
         from src.interactive_linear_visualizer import InteractiveLinearVisualizer
 
     # Create static circular plots
-    if not args.no_circular:
+    if not args.no_static:
         print("\nCreating static circular plots...")
         for seqid, ref_seq in ref_sequences.items():
             output_file = seqid_dirs[seqid] / f'{seqid}_circular.png'
@@ -417,14 +415,14 @@ def create_visualizations(ref_sequences, seqid_dirs, aligner, args):
             interactive_circular_files.append((output_file, ref_seq))
 
     # Create static linear plots
-    if not args.no_linear:
+    if not args.no_static:
         print("\nCreating static linear plots...")
         for seqid, ref_seq in ref_sequences.items():
             output_file = seqid_dirs[seqid] / f'{seqid}_linear.png'
             LinearVisualizer.create_linear_plot(ref_seq, output_file)
 
     # Create interactive linear plots
-    if not args.no_interactive_linear:
+    if not args.no_interactive:
         print("\nCreating interactive linear plots...")
         for seqid, ref_seq in ref_sequences.items():
             output_file = seqid_dirs[seqid] / f'{seqid}_interactive_linear.html'
