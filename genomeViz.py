@@ -793,12 +793,16 @@ For more information: https://github.com/Aaron-Thiel/GenomeViz
 
         # Step C3: Align scaffolds to reference
         print("\n  [C3] Aligning scaffolds to reference...")
+        if origin_position and origin_position != 0:
+            print(f"        Using rotated reference (origin at {origin_position:,} bp)")
         scaffold_aligner = GenomeAligner(reference_to_use, scaffolds_to_use, preset=args.preset)
         scaffold_aligner.load_reference()
         scaffold_alignments = scaffold_aligner.align()
 
         # Step C4: Align contigs to reference
         print("\n  [C4] Aligning contigs to reference...")
+        if origin_position and origin_position != 0:
+            print(f"        Using rotated reference (origin at {origin_position:,} bp)")
         contig_aligner = GenomeAligner(reference_to_use, contigs_to_use, preset=args.preset)
         contig_aligner.load_reference()
         contig_alignments = contig_aligner.align()
@@ -806,7 +810,7 @@ For more information: https://github.com/Aaron-Thiel/GenomeViz
         # Step C5: Parse additional GFF files
         print("\n  [C5] Parsing assembly GFF files...")
         multi_gff = MultiAssemblyGFFParser(
-            reference_gff=args.reference_gff,
+            reference_gff_parser=gff_parser,  # Use rotated gff_parser for correct coordinates
             scaffold_gff=args.scaffold_gff,
             contig_gff=args.contig_gff
         )
@@ -827,9 +831,12 @@ For more information: https://github.com/Aaron-Thiel/GenomeViz
         total_reference_length = max(reference_lengths.values()) if reference_lengths else 0
         print(f"  Reference genome length: {total_reference_length:,} bp")
 
-        # Create comparison output directory
-        comparison_dir = output_dir / 'assembly_comparison'
-        comparison_dir.mkdir(exist_ok=True)
+        # Track origin offset for coordinate consistency across modes
+        if origin_position and origin_position != 0:
+            print(f"  Origin offset applied: {origin_position:,} bp (oriC at position 0)")
+
+        # Use output_dir directly (it's already set to assembly_comparison/)
+        comparison_dir = output_dir
 
         # Step C7: Generate visualizations for each scaffold
         print("\n  [C7] Generating comparison visualizations...")
@@ -855,6 +862,10 @@ For more information: https://github.com/Aaron-Thiel/GenomeViz
             ref_start = min(r.scaffold_ref_start for r in overlap_regions)
             ref_end = max(r.scaffold_ref_end for r in overlap_regions)
             reference_seqid = overlap_regions[0].reference_seqid
+
+            # Log coordinates for debugging rotation consistency
+            if origin_position and origin_position != 0:
+                print(f"      Scaffold maps to reference: {ref_start:,} - {ref_end:,} bp (rotated coords)")
 
             # Analyze gene integrity
             # Priority: scaffold GFF > reference GFF (required --gff)
@@ -914,6 +925,7 @@ For more information: https://github.com/Aaron-Thiel/GenomeViz
 
             # Create ScaffoldSequence object for visualization
             # Pass reference_length for full genome context visualization
+            # Pass origin_position to ensure coordinate consistency with contig/scaffold modes
             scaffold_seq = ScaffoldSequence(
                 scaffold_name=scaffold_name,
                 ref_start=ref_start,
@@ -921,7 +933,8 @@ For more information: https://github.com/Aaron-Thiel/GenomeViz
                 overlap_regions=overlap_regions,
                 gene_results=gene_results,
                 reference_length=total_reference_length,
-                genes_are_reference_coords=genes_are_reference_coords
+                genes_are_reference_coords=genes_are_reference_coords,
+                origin_offset=origin_position if origin_position else 0
             )
 
             # Create linear visualization

@@ -235,7 +235,8 @@ class MultiAssemblyGFFParser:
 
     def __init__(self, reference_gff: Optional[str] = None,
                  scaffold_gff: Optional[str] = None,
-                 contig_gff: Optional[str] = None):
+                 contig_gff: Optional[str] = None,
+                 reference_gff_parser: Optional[object] = None):
         """
         Initialize multi-assembly GFF parser.
 
@@ -243,13 +244,19 @@ class MultiAssemblyGFFParser:
             reference_gff: Path to reference GFF3 file
             scaffold_gff: Path to scaffold GFF3 file
             contig_gff: Path to contig GFF3 file
+            reference_gff_parser: Optional pre-parsed GFFParser object for reference (overrides reference_gff)
         """
         self.reference_genes = {}
         self.scaffold_genes = {}
         self.contig_genes = {}
 
-        if reference_gff:
+        # Use pre-parsed reference GFF parser if provided (e.g., for rotated coordinates)
+        if reference_gff_parser:
+            self.reference_genes = reference_gff_parser.genes_by_seq
+            print(f"  Using pre-parsed reference GFF (rotated coordinates)")
+        elif reference_gff:
             self.reference_genes = self._parse_gff(reference_gff, "reference")
+
         if scaffold_gff:
             self.scaffold_genes = self._parse_gff(scaffold_gff, "scaffold")
         if contig_gff:

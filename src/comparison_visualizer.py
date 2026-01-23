@@ -38,7 +38,8 @@ class ScaffoldSequence:
                  overlap_regions: List[OverlapRegion],
                  gene_results: Optional[List[GeneComparisonResult]] = None,
                  reference_length: int = None,
-                 genes_are_reference_coords: bool = False):
+                 genes_are_reference_coords: bool = False,
+                 origin_offset: int = 0):
         """
         Initialize scaffold sequence for visualization.
 
@@ -52,6 +53,7 @@ class ScaffoldSequence:
             genes_are_reference_coords: If True, gene coordinates are already in reference
                                         coordinates (from reference GFF fallback).
                                         If False, genes are in scaffold-local coordinates.
+            origin_offset: Origin rotation offset applied to reference (0 if no rotation)
         """
         self.seqid = scaffold_name
         self.seq_type = 'scaffold'
@@ -60,9 +62,17 @@ class ScaffoldSequence:
         self.ref_start = ref_start
         self.ref_end = ref_end
         self.scaffold_length = ref_end - ref_start
-        
+
         # Track if genes are in reference coordinates (don't add ref_start)
         self.genes_are_reference_coords = genes_are_reference_coords
+
+        # Track origin offset for coordinate consistency with other modes
+        self.origin_offset = origin_offset
+
+        # Log coordinate info for debugging rotation consistency
+        if origin_offset > 0:
+            print(f"        Origin offset: {origin_offset:,} bp (coordinates should be rotated)")
+            print(f"        Scaffold region: {ref_start:,} - {ref_end:,} bp (in rotated reference)")
 
         # Full reference length for context visualization
         # If not provided, use scaffold region as the visualization length

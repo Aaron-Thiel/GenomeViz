@@ -75,8 +75,17 @@ class CircularVisualizer:
         quality_track_width = 0.15
 
         for gene in ref_seq.gene_stats:
-            start_angle = (gene['start'] / ref_seq.length) * 2 * np.pi
-            end_angle = (gene['end'] / ref_seq.length) * 2 * np.pi
+            # Calculate angles in degrees (0-360)
+            start_angle_raw = (gene['start'] / ref_seq.length) * 360
+            end_angle_raw = (gene['end'] / ref_seq.length) * 360
+
+            # Transform to 0-at-North, clockwise (matching comparison mode)
+            start_angle = 90 - start_angle_raw
+            end_angle = 90 - end_angle_raw
+
+            # Wedge needs start < end, so swap if needed (since we flipped direction)
+            if start_angle > end_angle:
+                start_angle, end_angle = end_angle, start_angle
 
             quality = gene['quality_score']
 
@@ -90,7 +99,7 @@ class CircularVisualizer:
                 color = '#e74c3c'
 
             wedge = Wedge((0, 0), quality_track_r,
-                         np.degrees(start_angle), np.degrees(end_angle),
+                         start_angle, end_angle,
                          width=quality_track_width, facecolor=color,
                          edgecolor='none', alpha=0.8,
                          transform=ax.transData._b)
@@ -152,12 +161,22 @@ class CircularVisualizer:
 
         # Draw segments as wedges
         for segment in segments:
-            start_angle = (segment['start'] / ref_seq.length) * 2 * np.pi
-            end_angle = ((segment['end'] + 1) / ref_seq.length) * 2 * np.pi
+            # Calculate angles in degrees (0-360)
+            start_angle_raw = (segment['start'] / ref_seq.length) * 360
+            end_angle_raw = ((segment['end'] + 1) / ref_seq.length) * 360
+
+            # Transform to 0-at-North, clockwise (matching comparison mode)
+            start_angle = 90 - start_angle_raw
+            end_angle = 90 - end_angle_raw
+
+            # Wedge needs start < end, so swap if needed
+            if start_angle > end_angle:
+                start_angle, end_angle = end_angle, start_angle
+
             color = status_colors[segment['status']]
 
             wedge = Wedge((0, 0), status_track_r,
-                         np.degrees(start_angle), np.degrees(end_angle),
+                         start_angle, end_angle,
                          width=status_track_width, facecolor=color,
                          edgecolor='none', alpha=0.8,
                          transform=ax.transData._b)
@@ -175,11 +194,20 @@ class CircularVisualizer:
                 contig_name = aln['query_name']
                 color = contig_colors.get(contig_name, '#888888')
 
-                start_angle = (aln['ref_start'] / ref_seq.length) * 2 * np.pi
-                end_angle = (aln['ref_end'] / ref_seq.length) * 2 * np.pi
+                # Calculate angles in degrees (0-360)
+                start_angle_raw = (aln['ref_start'] / ref_seq.length) * 360
+                end_angle_raw = (aln['ref_end'] / ref_seq.length) * 360
+
+                # Transform to 0-at-North, clockwise (matching comparison mode)
+                start_angle = 90 - start_angle_raw
+                end_angle = 90 - end_angle_raw
+
+                # Wedge needs start < end, so swap if needed
+                if start_angle > end_angle:
+                    start_angle, end_angle = end_angle, start_angle
 
                 wedge = Wedge((0, 0), contig_track_r,
-                            np.degrees(start_angle), np.degrees(end_angle),
+                            start_angle, end_angle,
                             width=contig_track_width, facecolor=color,
                             edgecolor='black', linewidth=0.5, alpha=0.7,
                             transform=ax.transData._b)
