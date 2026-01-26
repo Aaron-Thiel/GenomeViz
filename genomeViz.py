@@ -39,6 +39,7 @@ from src.utils import (validate_files, create_summary_report, save_gene_statisti
                        analyze_sequences, save_contig_mapping, create_visualizations,
                        generate_gene_alignments, rotate_sequence_and_features)
 from src.new_gene_analyzer import NewGeneAnalyzer
+from src.dashboard_generator import AlignmentDashboardGenerator, SampleDashboardGenerator
 from src import __version__
 
 
@@ -583,6 +584,16 @@ For more information: https://github.com/Aaron-Thiel/GenomeViz
         print(f"\nSummary report: {summary_file}")
         print_final_summary(output_dir, ref_sequences)
 
+        # Generate contig alignment dashboard
+        print("\n  Generating contig alignment dashboard...")
+        contig_dashboard = AlignmentDashboardGenerator(
+            output_dir, ref_sequences,
+            Path(args.contig).name, Path(args.reference).name,
+            mode='contig'
+        )
+        contig_index = contig_dashboard.generate_index_html()
+        print(f"  Dashboard: {contig_index}")
+
     # =========================================================================
     # SCAFFOLD MODE: Scaffold vs Reference
     # =========================================================================
@@ -685,6 +696,16 @@ For more information: https://github.com/Aaron-Thiel/GenomeViz
         summary_file = create_summary_report(output_dir, ref_sequences, args.scaffold, args.reference)
         print(f"\nSummary report: {summary_file}")
         print_final_summary(output_dir, ref_sequences)
+
+        # Generate scaffold alignment dashboard
+        print("\n  Generating scaffold alignment dashboard...")
+        scaffold_dashboard = AlignmentDashboardGenerator(
+            output_dir, ref_sequences,
+            Path(args.scaffold).name, Path(args.reference).name,
+            mode='scaffold'
+        )
+        scaffold_index = scaffold_dashboard.generate_index_html()
+        print(f"  Dashboard: {scaffold_index}")
 
     # =========================================================================
     # COMPARISON MODE: Scaffolds vs Contigs
@@ -1089,6 +1110,19 @@ For more information: https://github.com/Aaron-Thiel/GenomeViz
 
     # Save cache to base output directory
     save_cache(base_output_dir, cache)
+
+    # =========================================================================
+    # ROOT DASHBOARD (only when running multiple modes)
+    # =========================================================================
+    if args.mode == 'all':
+        print("\n" + "=" * 70)
+        print("GENERATING SAMPLE DASHBOARD")
+        print("=" * 70)
+
+        sample_name = base_output_dir.name
+        root_dashboard = SampleDashboardGenerator(base_output_dir, sample_name)
+        root_index = root_dashboard.generate_index_html()
+        print(f"\n  Root dashboard: {root_index}")
 
     # =========================================================================
     # FINAL OUTPUT

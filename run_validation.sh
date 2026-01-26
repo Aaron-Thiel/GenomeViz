@@ -24,7 +24,7 @@
 
 # Default values
 INPUT_DIR="examples/input_validation"
-OUTPUT_DIR="examples/output_validation_fixed"
+OUTPUT_DIR="examples/output_validation"
 MODE="all"  # contig, scaffold, comparison, or all
 FORCE_REPROCESS=false
 SKIP_INTERACTIVE=false

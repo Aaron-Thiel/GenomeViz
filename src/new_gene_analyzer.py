@@ -293,12 +293,6 @@ class NewGeneAnalyzer:
         """
         print("\n  Aligning contigs to scaffolds...")
         print(f"    Using preset: {self.preset}")
-        print(f"    Scaffolds file: {self.scaffolds_fasta}")
-        print(f"    Contigs file: {self.contigs_fasta}")
-        print(f"    DEBUG: Checking files exist...")
-        import os
-        print(f"      Scaffolds exists: {os.path.exists(self.scaffolds_fasta)}")
-        print(f"      Contigs exists: {os.path.exists(self.contigs_fasta)}")
         mappings = defaultdict(list)
         
         try:
@@ -326,10 +320,10 @@ class NewGeneAnalyzer:
                     matches = hit.mlen
                     block_len = hit.blen
                     identity = matches / block_len if block_len > 0 else 0
-                    
+
                     # Calculate alignment fraction
-                    # Note: hit.q_len is NOT available in mappy, so we use len(seq) from the loop
-                    s_len = len(seq)
+                    s_len = len(seq)  # scaffold length (query)
+                    c_len = hit.ctg_len  # contig length (reference)
                     s_start = hit.q_st
                     s_end = hit.q_en
                     alignment_fraction = (s_end - s_start) / s_len if s_len > 0 else 0
@@ -352,11 +346,11 @@ class NewGeneAnalyzer:
                     # Store each aligned block separately for accurate overlap detection
                     for ref_block_start, ref_block_end, query_block_start, query_block_end in cigar_blocks:
                         block_count += 1
-                        # Tuple: (ref_start, ref_end, contig_id, query_start, query_end, s_len, strand, identity, alignment_fraction)
-                        # Now: ref is CONTIG (reference), query is SCAFFOLD (query)
+                        # Tuple: (scaffold_start, scaffold_end, contig_id, contig_start, contig_end, contig_len, strand, identity, alignment_fraction)
+                        # Note: ref is CONTIG (reference in mappy), query is SCAFFOLD (query in mappy)
                         mappings[name].append((
                             query_block_start, query_block_end, hit.ctg, ref_block_start, ref_block_end,
-                            s_len, '+' if hit.strand == 1 else '-', identity, alignment_fraction
+                            c_len, '+' if hit.strand == 1 else '-', identity, alignment_fraction
                         ))
                         if scaffold_count <= 3 and hit_count <= 5:
                             print(f"        -> Block {block_count}: scaffold[{query_block_start}:{query_block_end}] contig[{ref_block_start}:{ref_block_end}]")
@@ -389,94 +383,341 @@ class NewGeneAnalyzer:
 
     def generate_visualization(self, gene, overlapping_contigs, full_scaffold_seq, contig_seqs):
         """
-        Generates an alignment visualization showing aligned parts (UPPER) and soft-clips (lower).
-        
+        Generates both nucleotide and amino acid alignment visualizations with detailed positional context.
+        Shows aligned parts (UPPER) and soft-clips (lower) in a stacked layout.
+
         Returns:
             tuple: (visualization_string, mapping_stats_string)
         """
         prot_seq = gene['prot_seq']
         if not prot_seq:
             return "No protein sequence available", ""
-        
+
         scaffold_len = len(full_scaffold_seq)
         g_start_0, g_end_0, strand = gene['start'] - 1, gene['end'], gene['strand']
-        
+
         context_bp = 30
         win_start = max(0, g_start_0 - context_bp)
         win_end = min(scaffold_len, g_end_0 + context_bp)
+
+        # Get both nucleotide and amino acid context windows
+        win_nt_seq = Seq(full_scaffold_seq[win_start:win_end])
+        if strand == '-':
+            win_nt_seq = win_nt_seq.reverse_complement()
+        win_nt = str(win_nt_seq)
+
         win_aa = self.get_translated_context(full_scaffold_seq, win_start, win_end, strand)
         win_len_aa = len(win_aa)
-        
+        win_len_nt = len(win_nt)
+
         if win_len_aa == 0:
             return "Could not generate visualization", ""
-        
-        vis_lines = []
+
+        vis_lines_aa = []
+        vis_lines_nt = []
         mapping_stats = []
+        contig_details = []  # Store detailed info for header
         
         for s_start, s_end, c_id, c_start, c_end, c_len, c_strand, identity, align_frac in sorted(overlapping_contigs, key=lambda x: x[0]):
-            line_chars = [" "] * win_len_aa
+            line_chars_aa = [" "] * win_len_aa
+            line_chars_nt = [" "] * win_len_nt
+
             mapping_stats.append(f"{c_id}: align: {align_frac:.2f}, id: {identity:.2f}")
-            
+
+            # Generate detailed info for header
+            contig_info = (f"  {c_id}: Length={c_len:,}bp, Aligned contig[{c_start:,}-{c_end:,}] to scaffold[{s_start:,}-{s_end:,}], "
+                          f"Strand={c_strand}, Identity={identity:.1%}")
+            contig_details.append(contig_info)
+
             # Find overlap between window and alignment
             intersect_start = max(win_start, s_start)
             intersect_end = min(win_end, s_end)
-            
+
+            # Calculate how much of the contig alignment extends beyond the visible window
+            # For LEFT: How many bp of the alignment are BEFORE the window starts?
+            if s_start < win_start:
+                left_extend_aa = (win_start - s_start) // 3
+                left_extend_nt = win_start - s_start
+            else:
+                left_extend_aa = 0
+                left_extend_nt = 0
+
+            # For RIGHT: How many bp of the alignment continue AFTER the window ends?
+            if s_end > win_end:
+                right_extend_aa = (s_end - win_end) // 3
+                right_extend_nt = s_end - win_end
+            else:
+                right_extend_aa = 0
+                right_extend_nt = 0
+
+            # Track if alignment starts/ends within the visible window
+            starts_in_window = s_start >= win_start
+            ends_in_window = s_end <= win_end
+
             if intersect_start < intersect_end:
-                rel_start_aa = (intersect_start - win_start) // 3
-                rel_end_aa = (intersect_end - win_start) // 3
-                
-                # Mark aligned region with uppercase
-                for i in range(rel_start_aa, min(rel_end_aa, win_len_aa)):
-                    line_chars[i] = win_aa[i]
-                
-                # Mark boundaries
-                if s_start >= win_start and rel_start_aa < win_len_aa:
-                    line_chars[rel_start_aa] = "<"
-                if s_end <= win_end and (rel_end_aa - 1) < win_len_aa:
-                    line_chars[max(0, rel_end_aa - 1)] = ">"
-            
-            # Add soft-clip regions (unaligned contig sequence)
+                # Get the actual contig sequence for the aligned region
+                # Try with original ID first, then without _RC suffix as fallback
+                full_c_seq = contig_seqs.get(c_id, "")
+
+                if not full_c_seq and c_id.endswith('_RC'):
+                    # Fallback: get original contig and RC it to match what was aligned
+                    base_id = c_id[:-3]
+                    full_c_seq = contig_seqs.get(base_id, "")
+                    if full_c_seq:
+                        # RC the entire sequence to simulate the oriented _RC version
+                        full_c_seq = str(Seq(full_c_seq).reverse_complement())
+
+                if full_c_seq:
+                    # Calculate which part of the contig corresponds to the visible intersection
+                    # intersect_start/end are in scaffold coordinates
+                    # We need to map back to contig coordinates
+
+                    # Offset from alignment start (in scaffold coords) to intersection start
+                    offset_from_align_start = intersect_start - s_start
+                    visible_length = intersect_end - intersect_start
+
+                    # Map to contig coordinates
+                    contig_visible_start = c_start + offset_from_align_start
+                    contig_visible_end = contig_visible_start + visible_length
+
+                    # Extract the contig sequence for this region
+                    contig_region_seq = Seq(full_c_seq[contig_visible_start:contig_visible_end])
+
+                    # Apply strand transformation if needed
+                    if c_strand == '-':
+                        contig_region_seq = contig_region_seq.reverse_complement()
+
+                    contig_nt = str(contig_region_seq).upper()
+
+                    # For amino acid: use the scaffold's AA at the corresponding positions
+                    # This ensures correct reading frame alignment since nucleotides match
+                    # Calculate the AA range that corresponds to this region
+                    nt_start_in_window = intersect_start - win_start
+                    nt_end_in_window = intersect_end - win_start
+
+                    # Find the codon boundaries that overlap with this NT region
+                    # First full codon that starts at or after nt_start
+                    first_codon_idx = (nt_start_in_window + 2) // 3  # Round up to next codon
+                    # Last codon that ends at or before nt_end
+                    last_codon_idx = nt_end_in_window // 3
+
+                    if first_codon_idx < last_codon_idx and last_codon_idx <= len(win_aa):
+                        contig_aa = win_aa[first_codon_idx:last_codon_idx]
+                    else:
+                        contig_aa = ""
+                else:
+                    # Fallback to scaffold sequence if contig not found
+                    nt_start_in_window = intersect_start - win_start
+                    nt_end_in_window = intersect_end - win_start
+                    contig_nt = win_nt[nt_start_in_window:nt_end_in_window].upper()
+                    first_codon_idx = (nt_start_in_window + 2) // 3
+                    last_codon_idx = nt_end_in_window // 3
+                    contig_aa = win_aa[first_codon_idx:last_codon_idx] if first_codon_idx < last_codon_idx else ""
+
+                # Position in the display window
+                rel_start_nt = intersect_start - win_start
+                rel_start_aa = (rel_start_nt + 2) // 3  # First full codon index
+
+                # Fill in nucleotide sequence
+                for i, nt in enumerate(contig_nt):
+                    idx = rel_start_nt + i
+                    if 0 <= idx < win_len_nt:
+                        line_chars_nt[idx] = nt
+
+                # Fill in amino acid sequence
+                for i, aa in enumerate(contig_aa):
+                    idx = rel_start_aa + i
+                    if 0 <= idx < win_len_aa:
+                        line_chars_aa[idx] = aa
+
+            # Add unaligned contig regions (overhang beyond alignment)
+            # Calculate contig overhang amounts
+            left_overhang_bp = c_start  # bp of contig before aligned region
+            right_overhang_bp = c_len - c_end  # bp of contig after aligned region
+
+            # Get contig sequence (try with _RC suffix fallback)
             full_c_seq = contig_seqs.get(c_id, "")
+            if not full_c_seq and c_id.endswith('_RC'):
+                full_c_seq = contig_seqs.get(c_id[:-3], "")
+                if full_c_seq:
+                    # RC the sequence to match the oriented _RC version
+                    full_c_seq = str(Seq(full_c_seq).reverse_complement())
+
+            # Track how much contig extends beyond the visible window
+            left_beyond_window_nt = 0
+            right_beyond_window_nt = 0
+
             if full_c_seq:
-                # Left soft-clip
-                if c_start > 0 and s_start >= win_start:
+                # Left overhang: contig sequence before the aligned region
+                if left_overhang_bp > 0:
                     clip_seq = Seq(full_c_seq[:c_start])
                     if c_strand == '-':
                         clip_seq = clip_seq.reverse_complement()
+                    clip_nt = str(clip_seq).lower()
                     clip_aa = str(clip_seq[:(len(clip_seq)//3)*3].translate()).lower()
-                    for i, aa in enumerate(reversed(clip_aa)):
+
+                    # Calculate how much fits in the window vs extends beyond
+                    space_in_window_left = s_start - win_start  # scaffold space available to the left
+
+                    if left_overhang_bp > space_in_window_left:
+                        # Some contig extends beyond the window
+                        left_beyond_window_nt = left_overhang_bp - space_in_window_left
+                        # Only show the part that fits in window
+                        clip_nt_visible = clip_nt[left_beyond_window_nt:]
+                        clip_aa_visible = clip_aa[left_beyond_window_nt // 3:]
+                    else:
+                        clip_nt_visible = clip_nt
+                        clip_aa_visible = clip_aa
+
+                    # Fill in visible overhang (right-aligned to alignment start)
+                    for i, nt in enumerate(reversed(clip_nt_visible)):
+                        idx = (s_start - win_start) - 1 - i
+                        if 0 <= idx < win_len_nt:
+                            line_chars_nt[idx] = nt
+
+                    for i, aa in enumerate(reversed(clip_aa_visible)):
                         idx = (s_start - win_start) // 3 - 1 - i
                         if 0 <= idx < win_len_aa:
-                            line_chars[idx] = aa
-                
-                # Right soft-clip
-                if c_end < c_len and s_end <= win_end:
+                            line_chars_aa[idx] = aa
+
+                # Right overhang: contig sequence after the aligned region
+                if right_overhang_bp > 0:
                     clip_seq = Seq(full_c_seq[c_end:])
                     if c_strand == '-':
                         clip_seq = clip_seq.reverse_complement()
+                    clip_nt = str(clip_seq).lower()
                     clip_aa = str(clip_seq[:(len(clip_seq)//3)*3].translate()).lower()
-                    for i, aa in enumerate(clip_aa):
+
+                    # Calculate how much fits in the window vs extends beyond
+                    space_in_window_right = win_end - s_end  # scaffold space available to the right
+
+                    if right_overhang_bp > space_in_window_right:
+                        # Some contig extends beyond the window
+                        right_beyond_window_nt = right_overhang_bp - space_in_window_right
+                        # Only show the part that fits in window
+                        clip_nt_visible = clip_nt[:space_in_window_right]
+                        clip_aa_visible = clip_aa[:space_in_window_right // 3]
+                    else:
+                        clip_nt_visible = clip_nt
+                        clip_aa_visible = clip_aa
+
+                    # Fill in visible overhang (left-aligned from alignment end)
+                    for i, nt in enumerate(clip_nt_visible):
+                        idx = (s_end - win_start) + i
+                        if 0 <= idx < win_len_nt:
+                            line_chars_nt[idx] = nt
+
+                    for i, aa in enumerate(clip_aa_visible):
                         idx = (s_end - win_start) // 3 + i
                         if 0 <= idx < win_len_aa:
-                            line_chars[idx] = aa
-            
-            vis_lines.append(f"{c_id:<20} {' ':<12} {''.join(line_chars)}")
+                            line_chars_aa[idx] = aa
+
+            # Add < and > markers to show alignment boundaries within the window
+            # < marks start of aligned region, > marks end of aligned region
+            if starts_in_window:
+                # Insert < at the start of the aligned region
+                start_pos_nt = s_start - win_start
+                start_pos_aa = start_pos_nt // 3
+                if 0 <= start_pos_nt < win_len_nt:
+                    line_chars_nt[start_pos_nt] = '<'
+                if 0 <= start_pos_aa < win_len_aa:
+                    line_chars_aa[start_pos_aa] = '<'
+
+            if ends_in_window:
+                # Insert > at the end of the aligned region
+                end_pos_nt = s_end - win_start - 1
+                end_pos_aa = (s_end - win_start - 1) // 3
+                if 0 <= end_pos_nt < win_len_nt:
+                    line_chars_nt[end_pos_nt] = '>'
+                if 0 <= end_pos_aa < win_len_aa:
+                    line_chars_aa[end_pos_aa] = '>'
+
+            # Format the lines with proper prefixes and suffixes
+            total_left_extend_nt = left_extend_nt + left_beyond_window_nt
+            total_left_extend_aa = left_extend_aa + (left_beyond_window_nt // 3)
+
+            prefix_nt = f"({total_left_extend_nt}...)".ljust(12) if total_left_extend_nt > 0 else " " * 12
+            prefix_aa = f"({total_left_extend_aa}...)".ljust(12) if total_left_extend_aa > 0 else " " * 12
+
+            seq_aa = ''.join(line_chars_aa)
+            seq_nt = ''.join(line_chars_nt)
+
+            # Suffix shows: alignment extension + contig overhang beyond window
+            total_right_extend_nt = right_extend_nt + right_beyond_window_nt
+            total_right_extend_aa = right_extend_aa + (right_beyond_window_nt // 3)
+
+            suffix_nt = f" (...{total_right_extend_nt})" if total_right_extend_nt > 0 else ""
+            suffix_aa = f" (...{total_right_extend_aa})" if total_right_extend_aa > 0 else ""
+
+            vis_lines_aa.append(f"{c_id:<25} {prefix_aa}{seq_aa}{suffix_aa}")
+            vis_lines_nt.append(f"{c_id:<25} {prefix_nt}{seq_nt}{suffix_nt}")
         
-        # Add scaffold sequence line
-        s_chars = list(win_aa)
-        g_rel_s = (g_start_0 - win_start) // 3
-        g_rel_e = (g_end_0 - win_start) // 3
-        
-        if 0 <= g_rel_s < win_len_aa:
-            s_chars[g_rel_s] = "|"
-        if 0 <= (g_rel_e - 1) < win_len_aa:
-            s_chars[g_rel_e - 1] = "|"
-        
-        s_prefix = f"({win_start}...)" if win_start > 0 else " " * 12
-        s_suffix = f"(...{scaffold_len - win_end})" if win_end < scaffold_len else ""
-        vis_lines.append(f"{'Scaffold (Context)':<20} {s_prefix:>12} {''.join(s_chars)} {s_suffix}")
-        
-        return "\n".join(vis_lines), "; ".join(mapping_stats)
+        # Add scaffold sequence lines (both AA and NT)
+        s_chars_aa = list(win_aa)
+        s_chars_nt = list(win_nt)
+
+        # Mark gene boundaries in AA
+        g_rel_s_aa = (g_start_0 - win_start) // 3
+        g_rel_e_aa = (g_end_0 - win_start) // 3
+
+        if 0 <= g_rel_s_aa < win_len_aa:
+            s_chars_aa[g_rel_s_aa] = "|"
+        if 0 <= (g_rel_e_aa - 1) < win_len_aa:
+            s_chars_aa[g_rel_e_aa - 1] = "|"
+
+        # Mark gene boundaries in NT
+        g_rel_s_nt = g_start_0 - win_start
+        g_rel_e_nt = g_end_0 - win_start
+
+        if 0 <= g_rel_s_nt < win_len_nt:
+            s_chars_nt[g_rel_s_nt] = "|"
+        if 0 <= (g_rel_e_nt - 1) < win_len_nt:
+            s_chars_nt[g_rel_e_nt - 1] = "|"
+
+        # Scaffold context - use fixed-width prefix for alignment
+        left_context = win_start
+        right_context = scaffold_len - win_end
+
+        # Fixed-width prefix (12 characters) for alignment with contig lines
+        if left_context > 0:
+            s_prefix_aa = f"({left_context}...)".ljust(12)
+            s_prefix_nt = f"({left_context}...)".ljust(12)
+        else:
+            s_prefix_aa = " " * 12
+            s_prefix_nt = " " * 12
+
+        s_suffix_aa = f" (...{right_context})" if right_context > 0 else ""
+        s_suffix_nt = f" (...{right_context})" if right_context > 0 else ""
+
+        vis_lines_aa.append(f"{'Scaffold (Context)':<25} {s_prefix_aa}{''.join(s_chars_aa)}{s_suffix_aa}")
+        vis_lines_nt.append(f"{'Scaffold (Context)':<25} {s_prefix_nt}{''.join(s_chars_nt)}{s_suffix_nt}")
+
+        # Build header with contig details
+        header = []
+        if contig_details:
+            header.append("Contig alignment details:")
+            header.extend(contig_details)
+            header.append("")
+
+        # Combine both visualizations in stacked format
+        final_vis = []
+
+        # Header with contig details
+        if header:
+            final_vis.extend(header)
+
+        # Amino acid visualization
+        final_vis.append("Amino Acid Alignment:")
+        final_vis.append("-" * 100)
+        final_vis.extend(vis_lines_aa)
+        final_vis.append("")
+
+        # Nucleotide visualization
+        final_vis.append("Nucleotide Alignment:")
+        final_vis.append("-" * 100)
+        final_vis.extend(vis_lines_nt)
+
+        return "\n".join(final_vis), "; ".join(mapping_stats)
 
     def classify_new_gene(self, gene, mappings, full_scaffold_seq, contig_seqs, contig_genes=None):
         """
@@ -509,81 +750,36 @@ class NewGeneAnalyzer:
         contig_gene_sources = {}  # Map: contig_name -> list of genes in the overlapping region
         
         if ovl and contig_genes:
-            # Debug: Show details
-            if gene['id'].startswith('MJAJBK_00'):
-                print(f"    DEBUG: Processing {len(ovl)} overlapping blocks")
-            
             # For each overlapping alignment block, map coordinates back to contig space
-            # and find what genes are there
             for aln in ovl:
                 ref_block_start, ref_block_end, contig_id, query_block_start, query_block_end, c_len, strand, identity, align_frac = aln
-                
-                if gene['id'].startswith('MJAJBK_00'):
-                    print(f"      Block: {contig_id}[{ref_block_start}:{ref_block_end}] -> query[{query_block_start}:{query_block_end}]")
-                
+
                 # Map the overlapping region [g_s:g_e] from scaffold to contig coordinates
-                # Find the intersection with this alignment block
                 overlap_start = max(g_s, ref_block_start)
                 overlap_end = min(g_e, ref_block_end)
-                
+
                 if overlap_start < overlap_end:
                     # Calculate offset: how much into the alignment block is the overlap start?
                     offset_in_block = overlap_start - ref_block_start
-                    
+
                     # Map to contig coordinates
                     contig_overlap_start = query_block_start + offset_in_block
                     contig_overlap_end = contig_overlap_start + (overlap_end - overlap_start)
-                    
-                    if gene['id'].startswith('MJAJBK_00'):
-                        print(f"        Mapped to contig: [{contig_overlap_start}:{contig_overlap_end}]")
-                    
-                    # Find genes in the contig that overlap this region
+
                     if contig_id not in contig_gene_sources:
                         contig_gene_sources[contig_id] = []
-                    
+
                     # Check which contig genes overlap with this region
-                    genes_found_in_contig = 0
-                    if contig_genes:
-                        for contig_gene in contig_genes:
-                            if contig_gene['scaffold'] == contig_id:  # Same contig
-                                c_g_s, c_g_e = contig_gene['start'] - 1, contig_gene['end']
-                                # Check if contig gene overlaps the mapped region
-                                if max(c_g_s, contig_overlap_start) < min(c_g_e, contig_overlap_end):
-                                    genes_found_in_contig += 1
-                                    contig_gene_sources[contig_id].append({
-                                        'id': contig_gene['id'],
-                                        'product': contig_gene['product'],
-                                        'start': contig_gene['start'],
-                                        'end': contig_gene['end']
-                                    })
-                    
-                    if gene['id'].startswith('MJAJBK_00'):
-                        print(f"        Found {genes_found_in_contig} genes in {contig_id} at [{contig_overlap_start}:{contig_overlap_end}]")
-        
-        # Debug output
-        if gene['id'].startswith('MJAJBK_00'):
-            print(f"    DEBUG: {gene['id']} [{g_s}:{g_e}] on {scaffold}")
-            print(f"      Contig_genes available: {contig_genes is not None and len(contig_genes) > 0}")
-            print(f"      Alignments on this scaffold: {len(scaffold_alignments)}")
-            print(f"      Overlapping blocks: {len(ovl)}")
-            if len(ovl) == 0 and len(scaffold_alignments) > 0:
-                print(f"      WARNING: No overlaps found! Showing scaffold alignments:")
-                for i, aln in enumerate(scaffold_alignments[:3]):
-                    ref_s, ref_e = aln[0], aln[1]
-                    contig_id = aln[2]
-                    print(f"        Alignment {i}: scaffold[{ref_s}:{ref_e}] <- {contig_id}")
-            if scaffold_alignments:
-                for i, aln in enumerate(scaffold_alignments[:2]):
-                    ref_s, ref_e = aln[0], aln[1]
-                    contig_id = aln[2]
-                    print(f"        Block {i}: scaffold[{ref_s}:{ref_e}] <- {contig_id}")
-                    # Check if this block overlaps the gene
-                    if max(g_s, ref_s) < min(g_e, ref_e):
-                        print(f"          -> OVERLAPS gene at [{max(g_s, ref_s)}:{min(g_e, ref_e)}]")
-            for contig_id, genes in contig_gene_sources.items():
-                print(f"        Contig {contig_id}: {len(genes)} genes")
-                for g in genes[:2]:
-                    print(f"          - {g['id']}: {g['product']}")
+                    for contig_gene in contig_genes:
+                        if contig_gene['scaffold'] == contig_id:
+                            c_g_s, c_g_e = contig_gene['start'] - 1, contig_gene['end']
+                            if max(c_g_s, contig_overlap_start) < min(c_g_e, contig_overlap_end):
+                                contig_gene_sources[contig_id].append({
+                                    'id': contig_gene['id'],
+                                    'product': contig_gene['product'],
+                                    'start': contig_gene['start'],
+                                    'end': contig_gene['end']
+                                })
         
         visual, stats = self.generate_visualization(gene, ovl, full_scaffold_seq, contig_seqs)
         
@@ -717,14 +913,164 @@ class NewGeneAnalyzer:
             
             # Save visualization file
             if vis_lines:
-                vis_file = self.visualizations_dir / 'new_genes_visualizations.txt'
-                with open(vis_file, 'w') as f:
-                    f.write(
-                        "Legend: UPPER = Aligned region, lower = Unaligned contig overhang, "
-                        "| = Gene position, < > = Contig alignment boundaries\n\n"
-                    )
+                legend = """
+NEW GENE VISUALIZATIONS
+=======================================================================================
+
+This file shows detailed alignments of new genes found in scaffolds, displaying both
+amino acid and nucleotide sequences in a stacked format for easy comparison.
+
+LEGEND:
+-------
+  UPPERCASE letters  = Aligned region (primary alignment between scaffold and contig)
+  lowercase letters  = Unaligned contig sequence (extends beyond aligned region)
+  <                  = Start of contig alignment within the visible window
+  >                  = End of contig alignment within the visible window
+  |                  = Gene boundary markers (start and end positions)
+  (N...)             = N bp of contig sequence extend to the LEFT (before visible window)
+  (...N)             = N bp of contig sequence continue to the RIGHT (after visible window)
+
+HEADER INFORMATION:
+-------------------
+Each gene includes detailed contig alignment information in the header:
+  - Length: Total contig sequence length
+  - Aligned: Positions aligned [contig coordinates] to [scaffold coordinates]
+  - Strand: Alignment orientation (+/-)
+  - Identity: Sequence identity percentage in aligned region
+
+SCAFFOLD CONTEXT:
+-----------------
+The scaffold line shows:
+  - (N...) prefix: N bp of scaffold extend before the visible window
+  - |...|: Gene start and end positions marked with vertical bars
+  - (...N) suffix: N bp of scaffold continue after the visible window
+
+CONTIG DISPLAY:
+---------------
+Each contig line shows:
+  - (N...) prefix: N bp of contig extend before visible window (alignment + overhang)
+  - UPPERCASE: Aligned portion of the contig
+  - lowercase: Unaligned contig sequence (overhang) within the visible window
+  - (...N) suffix: N bp of contig extend after visible window (alignment + overhang)
+
+FORMAT:
+-------
+Each gene shows TWO stacked visualizations:
+  1. Amino Acid Alignment - Protein sequence view
+  2. Nucleotide Alignment - DNA sequence view
+
+All sequences for a gene are aligned vertically for easy visual comparison.
+
+=======================================================================================
+
+"""
+                # Save TXT file
+                vis_file_txt = self.visualizations_dir / 'new_genes_visualizations.txt'
+                with open(vis_file_txt, 'w') as f:
+                    f.write(legend)
                     f.write("\n".join(vis_lines))
-                print(f"    Visualizations: {vis_file}")
+                print(f"    Visualizations (TXT): {vis_file_txt}")
+
+                # Save HTML file with proper styling for horizontal scroll
+                vis_file_html = self.visualizations_dir / 'new_genes_visualizations.html'
+                import html as html_module
+                escaped_legend = html_module.escape(legend)
+                escaped_content = html_module.escape("\n".join(vis_lines))
+                html_content = f'''<!DOCTYPE html>
+<html>
+<head>
+    <title>New Gene Visualizations - GenomeViz</title>
+    <style>
+        :root {{
+            --bg-color: #1e1e1e;
+            --text-color: #d4d4d4;
+            --header-bg: #2d2d2d;
+            --border-color: #404040;
+            --link-color: #569cd6;
+        }}
+        body {{
+            font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
+            background: var(--bg-color);
+            color: var(--text-color);
+            margin: 0;
+            padding: 20px;
+        }}
+        .container {{
+            max-width: 100%;
+        }}
+        h1 {{
+            color: #569cd6;
+            border-bottom: 2px solid var(--border-color);
+            padding-bottom: 10px;
+        }}
+        .back-link {{
+            display: inline-block;
+            margin-bottom: 15px;
+            color: var(--link-color);
+            text-decoration: none;
+        }}
+        .back-link:hover {{
+            text-decoration: underline;
+        }}
+        .legend {{
+            background: var(--header-bg);
+            padding: 15px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            border: 1px solid var(--border-color);
+        }}
+        .legend pre {{
+            margin: 0;
+            white-space: pre;
+            font-size: 13px;
+        }}
+        .alignments {{
+            background: #252526;
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            overflow-x: auto;
+            padding: 15px;
+        }}
+        .alignments pre {{
+            margin: 0;
+            white-space: pre;
+            font-size: 13px;
+            line-height: 1.4;
+        }}
+        footer {{
+            margin-top: 30px;
+            padding-top: 15px;
+            border-top: 1px solid var(--border-color);
+            color: #808080;
+            font-size: 12px;
+        }}
+        footer a {{
+            color: var(--link-color);
+        }}
+    </style>
+</head>
+<body>
+    <div class="container">
+        <a href="../../index.html" class="back-link">← Back to Comparison Overview</a>
+        <h1>New Gene Visualizations</h1>
+
+        <div class="legend">
+            <pre>{escaped_legend}</pre>
+        </div>
+
+        <div class="alignments">
+            <pre>{escaped_content}</pre>
+        </div>
+
+        <footer>
+            Generated by <a href="https://github.com/Aaron-Thiel/GenomeViz">GenomeViz</a>
+        </footer>
+    </div>
+</body>
+</html>'''
+                with open(vis_file_html, 'w', encoding='utf-8') as f:
+                    f.write(html_content)
+                print(f"    Visualizations (HTML): {vis_file_html}")
             
             return {'results': df, 'new_genes_count': new_gene_count, 'vis_dir': self.visualizations_dir}
         else:

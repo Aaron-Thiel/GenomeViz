@@ -3,9 +3,6 @@
 /del/
 /test/
 /examples/input_validation/
-/examples/output_1/
-/examples/output_2/
-/examples/output_test_new/
-/examples/output_validation/
-/examples/output_validation_fixed/
+/examples/output_*/
+/examples/SAMN*/
 src/__pycache__/

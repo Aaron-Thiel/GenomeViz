@@ -14,6 +14,7 @@ GitHub: https://github.com/Aaron-Thiel/GenomeViz
 License: MIT
 """
 
+import csv
 import json
 import numpy as np
 import plotly.graph_objects as go
@@ -1519,16 +1520,53 @@ class ComparisonIndexGenerator:
     def __init__(self, comparison_summary: dict, output_dir: Path,
                  gene_summary: Optional[dict] = None):
         self.summary = comparison_summary
-        self.output_dir = output_dir
+        self.output_dir = Path(output_dir)
         self.gene_summary = gene_summary
 
+    def _load_new_genes_data(self) -> dict:
+        """Load new genes analysis data from CSV files if available."""
+        new_genes_dir = self.output_dir / 'new_genes'
+        data = {
+            'total': 0,
+            'combined_contigs': 0,
+            'contextual_repredictions': 0,
+            'other_source': 0,
+            'genes': []
+        }
+
+        report_file = new_genes_dir / 'gene_comparison_report.csv'
+        if report_file.exists():
+            try:
+                with open(report_file, 'r', encoding='utf-8') as f:
+                    reader = csv.DictReader(f)
+                    for row in reader:
+                        data['total'] += 1
+                        classification = row.get('Classification', '')
+                        if 'Combined Contigs' in classification:
+                            data['combined_contigs'] += 1
+                        elif 'Contextual Re-prediction' in classification:
+                            data['contextual_repredictions'] += 1
+                        elif 'Other Source' in classification:
+                            data['other_source'] += 1
+                        data['genes'].append(row)
+            except Exception:
+                pass
+
+        return data
+
     def generate_index_html(self) -> Path:
-        """Generate main index HTML page."""
+        """Generate main index HTML page with harmonized styling."""
+
+        # Load new genes data
+        new_genes = self._load_new_genes_data()
+
+        # Gene integrity section
         gene_section = ""
         if self.gene_summary:
             gs = self.gene_summary
             gene_section = f'''
         <h2>Gene Integrity Summary</h2>
+        <p class="section-desc">How well contigs cover scaffold genes</p>
         <div class="summary-grid">
             <div class="stat-card">
                 <div class="stat-value">{gs.get('total_genes', 0)}</div>
@@ -1553,41 +1591,291 @@ class ComparisonIndexGenerator:
         </div>
 '''
 
+        # New genes section
+        new_genes_section = ""
+        if new_genes['total'] > 0:
+            # Build gene table rows (limit to first 20)
+            gene_rows = ""
+            for gene in new_genes['genes'][:20]:
+                classification = gene.get('Classification', '')
+                class_badge = 'combined' if 'Combined' in classification else ('reprediction' if 'Re-prediction' in classification else 'other')
+                gene_rows += f'''
+                <tr>
+                    <td><strong>{gene.get('GeneID', '')}</strong></td>
+                    <td>{gene.get('Product', '')[:50]}{'...' if len(gene.get('Product', '')) > 50 else ''}</td>
+                    <td>{gene.get('Scaffold', '')}</td>
+                    <td>{gene.get('Scaffold_Start', '')} - {gene.get('Scaffold_End', '')}</td>
+                    <td><span class="badge {class_badge}">{classification.split('(')[0].strip()}</span></td>
+                </tr>
+'''
+            more_genes = f'<p class="more-info">Showing first 20 of {new_genes["total"]} genes. <a href="new_genes/gene_comparison_report.csv">View all in CSV</a></p>' if new_genes['total'] > 20 else ''
+
+            new_genes_section = f'''
+        <h2>New Genes Analysis</h2>
+        <p class="section-desc">Genes in scaffolds that differ from or are absent in contigs</p>
+        <div class="summary-grid">
+            <div class="stat-card">
+                <div class="stat-value">{new_genes['total']}</div>
+                <div class="stat-label">Total New Genes</div>
+            </div>
+            <div class="stat-card combined">
+                <div class="stat-value">{new_genes['combined_contigs']}</div>
+                <div class="stat-label">Combined Contigs</div>
+            </div>
+            <div class="stat-card reprediction">
+                <div class="stat-value">{new_genes['contextual_repredictions']}</div>
+                <div class="stat-label">Re-predictions</div>
+            </div>
+            <div class="stat-card other">
+                <div class="stat-value">{new_genes['other_source']}</div>
+                <div class="stat-label">Other Source</div>
+            </div>
+        </div>
+
+        <div class="data-links">
+            <a href="new_genes/gene_comparison_report.csv" class="data-link">Full Report CSV</a>
+            <a href="new_genes/combined_contigs.csv" class="data-link">Combined Contigs CSV</a>
+            <a href="new_genes/contextual_repredictions.csv" class="data-link">Re-predictions CSV</a>
+            <a href="new_genes/visualizations/new_genes_visualizations.html" class="data-link">Sequence Alignments</a>
+        </div>
+
+        <table class="gene-table">
+            <thead>
+                <tr>
+                    <th>Gene ID</th>
+                    <th>Product</th>
+                    <th>Scaffold</th>
+                    <th>Position</th>
+                    <th>Classification</th>
+                </tr>
+            </thead>
+            <tbody>
+                {gene_rows}
+            </tbody>
+        </table>
+        {more_genes}
+'''
+
+        # Build scaffold comparison rows
+        scaffold_rows = ""
+        for scaffold_name, stats in self.summary['scaffold_stats'].items():
+            safe_name = "".join(c if c.isalnum() or c in '-_' else '_' for c in scaffold_name)
+            scaffold_rows += f'''
+                <tr>
+                    <td><strong>{scaffold_name}</strong></td>
+                    <td>{stats['num_overlapping_contigs']}</td>
+                    <td>{stats['total_overlap_bp']:,} bp</td>
+                    <td class="viz-links">
+                        <a href="{safe_name}/{safe_name}_circular.html" class="viz-link circular">Circular</a>
+                        <a href="{safe_name}/{safe_name}_interactive_linear.html" class="viz-link linear">Linear</a>
+                    </td>
+                </tr>
+'''
+
         html_content = f'''<!DOCTYPE html>
 <html>
 <head>
-    <title>Scaffold-Contig Comparison - GenomeViz</title>
+    <title>Scaffold vs Contig Comparison - GenomeViz</title>
     <style>
-        body {{ font-family: Arial, sans-serif; margin: 0; padding: 20px; background: #f5f5f5; }}
-        .container {{ max-width: 1400px; margin: 0 auto; background: white; padding: 30px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }}
-        h1 {{ color: #2c3e50; border-bottom: 3px solid #3498db; padding-bottom: 15px; }}
-        h2 {{ color: #34495e; margin-top: 30px; }}
-        .summary-grid {{ display: flex; flex-wrap: wrap; gap: 15px; margin: 20px 0; }}
-        .stat-card {{ background: #ecf0f1; padding: 20px; border-radius: 8px; text-align: center; min-width: 120px; }}
-        .stat-card .stat-value {{ font-size: 28px; font-weight: bold; color: #3498db; }}
-        .stat-card .stat-label {{ font-size: 12px; color: #7f8c8d; margin-top: 5px; }}
-        .stat-card.complete .stat-value {{ color: #2ecc71; }}
-        .stat-card.split .stat-value {{ color: #f1c40f; }}
-        .stat-card.truncated .stat-value {{ color: #e67e22; }}
-        .stat-card.missing .stat-value {{ color: #e74c3c; }}
-        table {{ width: 100%; border-collapse: collapse; margin: 20px 0; }}
-        th, td {{ padding: 12px 15px; text-align: left; border-bottom: 1px solid #eee; }}
-        th {{ background: #3498db; color: white; }}
-        tr:hover {{ background: #f8f9fa; }}
-        .btn {{ display: inline-block; padding: 6px 14px; text-decoration: none; border-radius: 4px; font-size: 13px; margin: 2px; }}
-        .btn-circular {{ background: #9b59b6; color: white; }}
-        .btn-circular:hover {{ background: #8e44ad; }}
-        .btn-linear {{ background: #3498db; color: white; }}
-        .btn-linear:hover {{ background: #2980b9; }}
-        .btn-png {{ background: #27ae60; color: white; }}
-        .btn-png:hover {{ background: #219a52; }}
-        footer {{ margin-top: 40px; padding-top: 20px; border-top: 1px solid #eee; color: #7f8c8d; font-size: 12px; }}
+        :root {{
+            --primary-color: #2563eb;
+            --success-color: #16a34a;
+            --warning-color: #d97706;
+            --danger-color: #dc2626;
+            --info-color: #0891b2;
+            --purple-color: #7c3aed;
+            --bg-color: #f8fafc;
+            --card-bg: #ffffff;
+            --text-color: #1e293b;
+            --text-muted: #64748b;
+            --border-color: #e2e8f0;
+        }}
+
+        * {{ box-sizing: border-box; margin: 0; padding: 0; }}
+
+        body {{
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: var(--bg-color);
+            color: var(--text-color);
+            line-height: 1.6;
+            padding: 2rem;
+        }}
+
+        .container {{ max-width: 1200px; margin: 0 auto; }}
+
+        .back-link {{
+            display: inline-block;
+            margin-bottom: 1rem;
+            color: var(--primary-color);
+            text-decoration: none;
+        }}
+        .back-link:hover {{ text-decoration: underline; }}
+
+        header {{
+            text-align: center;
+            margin-bottom: 2rem;
+            padding-bottom: 1rem;
+            border-bottom: 2px solid var(--border-color);
+        }}
+
+        h1 {{ color: var(--primary-color); margin-bottom: 0.5rem; }}
+        .subtitle {{ color: var(--text-muted); font-size: 1.1rem; }}
+
+        h2 {{
+            color: var(--text-color);
+            margin: 2rem 0 0.5rem 0;
+            padding-bottom: 0.5rem;
+            border-bottom: 1px solid var(--border-color);
+        }}
+
+        .section-desc {{
+            color: var(--text-muted);
+            margin-bottom: 1rem;
+            font-size: 0.95rem;
+        }}
+
+        .summary-grid {{
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+            gap: 1rem;
+            margin-bottom: 1.5rem;
+        }}
+
+        .stat-card {{
+            background: var(--card-bg);
+            padding: 1.5rem;
+            border-radius: 8px;
+            text-align: center;
+            border: 1px solid var(--border-color);
+        }}
+
+        .stat-value {{
+            font-size: 2rem;
+            font-weight: bold;
+            color: var(--primary-color);
+        }}
+
+        .stat-label {{
+            color: var(--text-muted);
+            font-size: 0.85rem;
+            margin-top: 0.25rem;
+        }}
+
+        .stat-card.complete .stat-value {{ color: var(--success-color); }}
+        .stat-card.split .stat-value {{ color: var(--warning-color); }}
+        .stat-card.truncated .stat-value {{ color: #ea580c; }}
+        .stat-card.missing .stat-value {{ color: var(--danger-color); }}
+        .stat-card.combined .stat-value {{ color: var(--purple-color); }}
+        .stat-card.reprediction .stat-value {{ color: var(--info-color); }}
+        .stat-card.other .stat-value {{ color: var(--text-muted); }}
+
+        .data-links {{
+            display: flex;
+            gap: 0.75rem;
+            flex-wrap: wrap;
+            margin-bottom: 1.5rem;
+        }}
+
+        .data-link {{
+            display: inline-block;
+            padding: 0.5rem 1rem;
+            background: var(--card-bg);
+            color: var(--primary-color);
+            text-decoration: none;
+            border-radius: 6px;
+            border: 1px solid var(--border-color);
+            font-size: 0.9rem;
+            transition: all 0.2s;
+        }}
+        .data-link:hover {{
+            background: var(--primary-color);
+            color: white;
+            border-color: var(--primary-color);
+        }}
+
+        table {{
+            width: 100%;
+            border-collapse: collapse;
+            margin: 1rem 0;
+            background: var(--card-bg);
+            border-radius: 8px;
+            overflow: hidden;
+            border: 1px solid var(--border-color);
+        }}
+
+        th, td {{
+            padding: 0.875rem 1rem;
+            text-align: left;
+        }}
+
+        th {{
+            background: var(--primary-color);
+            color: white;
+            font-weight: 500;
+            font-size: 0.9rem;
+        }}
+
+        td {{ border-bottom: 1px solid var(--border-color); }}
+        tr:last-child td {{ border-bottom: none; }}
+        tr:hover td {{ background: #f8fafc; }}
+
+        .viz-links {{
+            display: flex;
+            gap: 0.5rem;
+        }}
+
+        .viz-link {{
+            display: inline-block;
+            padding: 0.375rem 0.75rem;
+            text-decoration: none;
+            border-radius: 4px;
+            font-size: 0.8rem;
+            font-weight: 500;
+            color: white;
+        }}
+        .viz-link.circular {{ background: var(--purple-color); }}
+        .viz-link.linear {{ background: var(--primary-color); }}
+        .viz-link:hover {{ opacity: 0.9; }}
+
+        .badge {{
+            display: inline-block;
+            padding: 0.25rem 0.5rem;
+            border-radius: 4px;
+            font-size: 0.75rem;
+            font-weight: 500;
+        }}
+        .badge.combined {{ background: #ede9fe; color: var(--purple-color); }}
+        .badge.reprediction {{ background: #e0f2fe; color: var(--info-color); }}
+        .badge.other {{ background: #f1f5f9; color: var(--text-muted); }}
+
+        .more-info {{
+            color: var(--text-muted);
+            font-size: 0.9rem;
+            margin-top: 0.5rem;
+        }}
+        .more-info a {{ color: var(--primary-color); }}
+
+        footer {{
+            text-align: center;
+            margin-top: 3rem;
+            padding-top: 1rem;
+            border-top: 1px solid var(--border-color);
+            color: var(--text-muted);
+            font-size: 0.9rem;
+        }}
+        footer a {{ color: var(--primary-color); }}
     </style>
 </head>
 <body>
     <div class="container">
-        <h1>Scaffold-Contig Comparison Results</h1>
+        <a href="../index.html" class="back-link">← Back to Sample Overview</a>
 
+        <header>
+            <h1>Scaffold vs Contig Comparison</h1>
+            <p class="subtitle">Analyzing differences between assembled scaffolds and original contigs</p>
+        </header>
+
+        <h2>Overview</h2>
         <div class="summary-grid">
             <div class="stat-card">
                 <div class="stat-value">{self.summary['num_scaffolds']}</div>
@@ -1605,42 +1893,26 @@ class ComparisonIndexGenerator:
 
         {gene_section}
 
-        <h2>Scaffold Comparisons</h2>
+        {new_genes_section}
+
+        <h2>Scaffold Visualizations</h2>
+        <p class="section-desc">Interactive plots showing contig coverage on each scaffold</p>
         <table>
             <thead>
                 <tr>
                     <th>Scaffold</th>
                     <th>Overlapping Contigs</th>
                     <th>Total Overlap</th>
-                    <th>Views</th>
+                    <th>Visualizations</th>
                 </tr>
             </thead>
             <tbody>
-'''
-
-        for scaffold_name, stats in self.summary['scaffold_stats'].items():
-            safe_name = "".join(c if c.isalnum() or c in '-_' else '_' for c in scaffold_name)
-
-            html_content += f'''
-                <tr>
-                    <td><strong>{scaffold_name}</strong></td>
-                    <td>{stats['num_overlapping_contigs']}</td>
-                    <td>{stats['total_overlap_bp']:,} bp</td>
-                    <td>
-                        <a href="{safe_name}/{safe_name}_circular.html" class="btn btn-circular">Circular</a>
-                        <a href="{safe_name}/{safe_name}_linear.png" class="btn btn-linear">Linear</a>
-                        <a href="{safe_name}/{safe_name}_circular.png" class="btn btn-png">PNG</a>
-                    </td>
-                </tr>
-'''
-
-        html_content += '''
+                {scaffold_rows}
             </tbody>
         </table>
 
         <footer>
-            Generated by GenomeViz - Scaffold-Contig Comparison Mode<br>
-            <a href="https://github.com/Aaron-Thiel/GenomeViz">https://github.com/Aaron-Thiel/GenomeViz</a>
+            Generated by <a href="https://github.com/Aaron-Thiel/GenomeViz">GenomeViz</a>
         </footer>
     </div>
 </body>
