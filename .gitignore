@@ -1,8 +1,0 @@
-# Ignore the top-level 'setup' folder
-/setup/
-/del/
-/test/
-/examples/input_validation/
-/examples/output_*/
-/examples/SAMN*/
-src/__pycache__/
