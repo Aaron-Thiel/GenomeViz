@@ -667,9 +667,11 @@ class SampleDashboardGenerator:
             'complete': 0,
             'incomplete': 0,
             'missing': 0,
-            'coverage': 0,
-            'identity': 0,
-            'gaps': 0
+            'coverage': 0.0,
+            'identity': 0.0,
+            'gaps': 0,
+            'contigs_aligned': 0,
+            'alignments': 0
         }
 
         if not summary_file.exists():
@@ -679,21 +681,45 @@ class SampleDashboardGenerator:
             with open(summary_file, 'r') as f:
                 content = f.read()
 
-            # Parse gene quality
+            # Parse gene quality - accumulate totals across all chromosomes
+            # We need to track gene counts per chromosome for weighted averages
+            current_gene_count = 0
+            weighted_coverage_sum = 0.0
+            weighted_identity_sum = 0.0
+            total_genes_for_avg = 0
+
             for line in content.split('\n'):
+                # Strip leading/trailing whitespace to handle indented lines
                 line = line.strip()
-                if line.startswith('Complete:'):
-                    stats['complete'] = int(line.split(':')[1].strip())
+                if line.startswith('Genes:'):
+                    # Track gene count for current chromosome (for weighted average)
+                    current_gene_count = int(line.split(':')[1].strip())
+                elif line.startswith('Complete:'):
+                    stats['complete'] += int(line.split(':')[1].strip())
                 elif line.startswith('Incomplete:'):
-                    stats['incomplete'] = int(line.split(':')[1].strip())
+                    stats['incomplete'] += int(line.split(':')[1].strip())
                 elif line.startswith('Missing:'):
-                    stats['missing'] = int(line.split(':')[1].strip())
+                    stats['missing'] += int(line.split(':')[1].strip())
                 elif line.startswith('Coverage:'):
-                    stats['coverage'] = float(line.split(':')[1].strip().replace('%', ''))
+                    # Weight by gene count for this chromosome
+                    coverage_val = float(line.split(':')[1].strip().replace('%', ''))
+                    weighted_coverage_sum += coverage_val * current_gene_count
+                    total_genes_for_avg += current_gene_count
                 elif line.startswith('Identity:'):
-                    stats['identity'] = float(line.split(':')[1].strip().replace('%', ''))
+                    # Weight by gene count for this chromosome
+                    identity_val = float(line.split(':')[1].strip().replace('%', ''))
+                    weighted_identity_sum += identity_val * current_gene_count
                 elif line.startswith('Gaps:'):
-                    stats['gaps'] = int(line.split(':')[1].strip())
+                    stats['gaps'] += int(line.split(':')[1].strip())
+                elif line.startswith('Contigs aligned:'):
+                    stats['contigs_aligned'] += int(line.split(':')[1].strip())
+                elif line.startswith('Alignments:'):
+                    stats['alignments'] += int(line.split(':')[1].strip())
+
+            # Calculate weighted averages if we have data
+            if total_genes_for_avg > 0:
+                stats['coverage'] = weighted_coverage_sum / total_genes_for_avg
+                stats['identity'] = weighted_identity_sum / total_genes_for_avg
         except Exception:
             pass
 
@@ -725,6 +751,7 @@ class SampleDashboardGenerator:
                              stats: dict, has_dashboard: bool) -> str:
         """Build HTML for an analysis card (contig or scaffold mode)."""
         card_class = 'contig' if 'Contig' in title else 'scaffold'
+        seq_label = 'Contigs' if 'Contig' in title else 'Scaffolds'
 
         return f'''
         <div class="analysis-card {card_class}">
@@ -734,6 +761,14 @@ class SampleDashboardGenerator:
             </div>
             <div class="card-body">
                 <div class="stats-grid">
+                    <div class="stat-item">
+                        <div class="value">{stats.get('contigs_aligned', 0)}</div>
+                        <div class="label">{seq_label} Aligned</div>
+                    </div>
+                    <div class="stat-item">
+                        <div class="value">{stats.get('alignments', 0)}</div>
+                        <div class="label">Alignments</div>
+                    </div>
                     <div class="stat-item success">
                         <div class="value">{stats['complete']}</div>
                         <div class="label">Complete Genes</div>

@@ -467,6 +467,9 @@ class NewGeneAnalyzer:
                         # RC the entire sequence to simulate the oriented _RC version
                         full_c_seq = str(Seq(full_c_seq).reverse_complement())
 
+                # Track if we're using the scaffold-based fallback (already display-ordered)
+                used_scaffold_fallback = False
+
                 if full_c_seq:
                     # Calculate which part of the contig corresponds to the visible intersection
                     # intersect_start/end are in scaffold coordinates
@@ -476,9 +479,20 @@ class NewGeneAnalyzer:
                     offset_from_align_start = intersect_start - s_start
                     visible_length = intersect_end - intersect_start
 
-                    # Map to contig coordinates
-                    contig_visible_start = c_start + offset_from_align_start
-                    contig_visible_end = contig_visible_start + visible_length
+                    # Map to contig coordinates - depends on alignment strand
+                    if c_strand == '-':
+                        # For minus strand: scaffold forward = contig backward
+                        # c_end corresponds to s_start, c_start corresponds to s_end
+                        contig_visible_end = c_end - offset_from_align_start
+                        contig_visible_start = contig_visible_end - visible_length
+                    else:
+                        # For plus strand: scaffold forward = contig forward
+                        contig_visible_start = c_start + offset_from_align_start
+                        contig_visible_end = contig_visible_start + visible_length
+
+                    # Ensure coordinates are within bounds
+                    contig_visible_start = max(0, contig_visible_start)
+                    contig_visible_end = min(len(full_c_seq), contig_visible_end)
 
                     # Extract the contig sequence for this region
                     contig_region_seq = Seq(full_c_seq[contig_visible_start:contig_visible_end])
@@ -495,11 +509,21 @@ class NewGeneAnalyzer:
                     nt_start_in_window = intersect_start - win_start
                     nt_end_in_window = intersect_end - win_start
 
+                    # For minus strand genes, win_aa is already in display order (5'->3' gene direction)
+                    # We need to convert scaffold coordinates to display coordinates
+                    if strand == '-':
+                        # Flip coordinates for display space
+                        nt_start_display = win_len_nt - nt_end_in_window
+                        nt_end_display = win_len_nt - nt_start_in_window
+                    else:
+                        nt_start_display = nt_start_in_window
+                        nt_end_display = nt_end_in_window
+
                     # Find the codon boundaries that overlap with this NT region
                     # First full codon that starts at or after nt_start
-                    first_codon_idx = (nt_start_in_window + 2) // 3  # Round up to next codon
+                    first_codon_idx = (nt_start_display + 2) // 3  # Round up to next codon
                     # Last codon that ends at or before nt_end
-                    last_codon_idx = nt_end_in_window // 3
+                    last_codon_idx = nt_end_display // 3
 
                     if first_codon_idx < last_codon_idx and last_codon_idx <= len(win_aa):
                         contig_aa = win_aa[first_codon_idx:last_codon_idx]
@@ -507,15 +531,40 @@ class NewGeneAnalyzer:
                         contig_aa = ""
                 else:
                     # Fallback to scaffold sequence if contig not found
+                    # Since win_nt is already in display order, we extract directly
+                    used_scaffold_fallback = True
                     nt_start_in_window = intersect_start - win_start
                     nt_end_in_window = intersect_end - win_start
-                    contig_nt = win_nt[nt_start_in_window:nt_end_in_window].upper()
-                    first_codon_idx = (nt_start_in_window + 2) // 3
-                    last_codon_idx = nt_end_in_window // 3
+
+                    # For minus strand, use display coordinates for extraction from win_nt/win_aa
+                    if strand == '-':
+                        nt_start_display = win_len_nt - nt_end_in_window
+                        nt_end_display = win_len_nt - nt_start_in_window
+                        contig_nt = win_nt[nt_start_display:nt_end_display].upper()
+                        first_codon_idx = (nt_start_display + 2) // 3
+                        last_codon_idx = nt_end_display // 3
+                    else:
+                        contig_nt = win_nt[nt_start_in_window:nt_end_in_window].upper()
+                        first_codon_idx = (nt_start_in_window + 2) // 3
+                        last_codon_idx = nt_end_in_window // 3
                     contig_aa = win_aa[first_codon_idx:last_codon_idx] if first_codon_idx < last_codon_idx else ""
 
                 # Position in the display window
-                rel_start_nt = intersect_start - win_start
+                # For minus strand, the scaffold display is RC'd so we need to:
+                # 1. Flip positions (original end -> display start)
+                # 2. RC the contig sequence to match the RC'd scaffold display (only if from actual contig)
+                if strand == '-':
+                    # In RC'd display: intersection maps to flipped position
+                    rel_start_nt = win_len_nt - (intersect_end - win_start)
+                    # RC the contig sequence to match the RC'd scaffold display
+                    # But NOT if we used the scaffold fallback (already in display order)
+                    if not used_scaffold_fallback:
+                        contig_nt = str(Seq(contig_nt).reverse_complement())
+                    # Note: contig_aa is already extracted in display order (see above),
+                    # so no reversal is needed here
+                else:
+                    rel_start_nt = intersect_start - win_start
+
                 rel_start_aa = (rel_start_nt + 2) // 3  # First full codon index
 
                 # Fill in nucleotide sequence

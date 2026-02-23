@@ -20,27 +20,27 @@ License: MIT
 """
 
 import argparse
+import hashlib
+import json
 import os
 import sys
 import warnings
-import json
-import hashlib
-from pathlib import Path
 from datetime import datetime
+from pathlib import Path
+
+from src.alignment import GenomeAligner, ContigMapper, OrientationDetector
+from src.dashboard_generator import AlignmentDashboardGenerator, SampleDashboardGenerator
+from src.new_gene_analyzer import NewGeneAnalyzer
+from src.sequence import GFFParser, find_oric_position
+from src.utils import (create_summary_report, save_gene_statistics,
+                       print_final_summary, print_directory_tree, create_output_directories,
+                       analyze_sequences, save_contig_mapping, create_visualizations,
+                       generate_gene_alignments, rotate_sequence_and_features)
+from src import __version__
 
 # Suppress specific warnings
 warnings.filterwarnings('ignore', category=UserWarning, module='Bio.Seq')
 os.environ['QT_QPA_PLATFORM'] = 'offscreen'  # Suppress Qt warnings
-
-from src.alignment import GenomeAligner, ContigMapper, OrientationDetector
-from src.sequence import GFFParser, find_oric_position
-from src.utils import (validate_files, create_summary_report, save_gene_statistics,
-                       print_final_summary, print_directory_tree, create_output_directories,
-                       analyze_sequences, save_contig_mapping, create_visualizations,
-                       generate_gene_alignments, rotate_sequence_and_features)
-from src.new_gene_analyzer import NewGeneAnalyzer
-from src.dashboard_generator import AlignmentDashboardGenerator, SampleDashboardGenerator
-from src import __version__
 
 
 def get_file_hash(filepath):
@@ -61,7 +61,7 @@ def load_cache(output_dir):
         try:
             with open(cache_file, 'r') as f:
                 return json.load(f)
-        except:
+        except (json.JSONDecodeError, OSError):
             return {}
     return {}
 
@@ -100,8 +100,6 @@ def auto_detect_files(input_dir):
         dict: Detected file paths with keys: reference, gff, scaffolds,
               contigs, scaffold_gff, contig_gff, scaffold_faa, contig_faa
     """
-    from pathlib import Path
-
     input_path = Path(input_dir)
     detected = {}
 
@@ -506,93 +504,102 @@ For more information: https://github.com/Aaron-Thiel/GenomeViz
         if contig_mode_cache_key not in cache:
             cache[contig_mode_cache_key] = {}
 
-        if not args.force and check_cache_valid(cache, contig_mode_cache_key, contig_input_files):
-            print("\n✓ Using cached results (unchanged input files)")
+        # Check if we can skip processing (cache valid AND output exists)
+        contig_index_file = output_dir / 'index.html'
+        skip_contig_mode = (
+            not args.force
+            and check_cache_valid(cache, contig_mode_cache_key, contig_input_files)
+            and contig_index_file.exists()
+        )
+
+        if skip_contig_mode:
+            print("\n✓ Skipping contig mode - output exists and input files unchanged")
+            print("  (use --force to reprocess)")
         else:
-            if 'input_hashes' in cache[contig_mode_cache_key]:
+            if not args.force and 'input_hashes' in cache.get(contig_mode_cache_key, {}):
                 print("\n⚠ Input files changed, reprocessing...")
 
-        # Orientation detection for contigs
-        print("\n  [2b] Contig Orientation Detection")
-        print("  " + "-"*66)
+            # Orientation detection for contigs
+            print("\n  [2b] Contig Orientation Detection")
+            print("  " + "-"*66)
 
-        if not args.no_auto_orient:
-            base_output_dir.mkdir(parents=True, exist_ok=True)
-            oriented_contig_path = base_output_dir / '.oriented_contig.fasta'
+            if not args.no_auto_orient:
+                base_output_dir.mkdir(parents=True, exist_ok=True)
+                oriented_contig_path = base_output_dir / '.oriented_contig.fasta'
 
-            if oriented_contig_path.exists() and not args.force:
-                contig_to_use = str(oriented_contig_path)
-                print(f"  ✓ Using cached oriented contig: {oriented_contig_path.name}")
-            else:
-                detector = OrientationDetector(reference_to_use, args.contig, preset=args.preset)
-                contig_to_use, temp_asm = detector.detect_and_correct()
-
-                if contig_to_use != args.contig:
-                    with open(contig_to_use, 'r') as src:
-                        with open(oriented_contig_path, 'w') as dst:
-                            dst.write(src.read())
+                if oriented_contig_path.exists() and not args.force:
                     contig_to_use = str(oriented_contig_path)
-                    if temp_asm:
-                        temp_files_to_cleanup.append(temp_asm)
-        else:
-            contig_to_use = args.contig
-            print("  ℹ️  Orientation detection skipped (--no-auto-orient)")
+                    print(f"  ✓ Using cached oriented contig: {oriented_contig_path.name}")
+                else:
+                    detector = OrientationDetector(reference_to_use, args.contig, preset=args.preset)
+                    contig_to_use, temp_asm = detector.detect_and_correct()
 
-        # Load reference and align
-        print("\n" + "-"*70)
-        print("Loading reference and aligning contig...")
-        print("-"*70)
-        aligner = GenomeAligner(reference_to_use, contig_to_use, preset=args.preset)
-        aligner.load_reference()
-        alignments_by_ref = aligner.align()
+                    if contig_to_use != args.contig:
+                        with open(contig_to_use, 'r') as src:
+                            with open(oriented_contig_path, 'w') as dst:
+                                dst.write(src.read())
+                        contig_to_use = str(oriented_contig_path)
+                        if temp_asm:
+                            temp_files_to_cleanup.append(temp_asm)
+            else:
+                contig_to_use = args.contig
+                print("  ℹ️  Orientation detection skipped (--no-auto-orient)")
 
-        # Create contig mapping
-        mapper = ContigMapper(alignments_by_ref)
-        contig_mapping = mapper.create_mapping()
+            # Load reference and align
+            print("\n" + "-"*70)
+            print("Loading reference and aligning contig...")
+            print("-"*70)
+            aligner = GenomeAligner(reference_to_use, contig_to_use, preset=args.preset)
+            aligner.load_reference()
+            alignments_by_ref = aligner.align()
 
-        # Analyze sequences
-        print("\nAnalyzing sequences...")
-        ref_sequences = analyze_sequences(
-            aligner, gff_parser, alignments_by_ref, contig_mapping,
-            args.min_gap, args.min_inversion
-        )
+            # Create contig mapping
+            mapper = ContigMapper(alignments_by_ref)
+            contig_mapping = mapper.create_mapping()
 
-        # Create output directories and save contig mapping
-        seqid_dirs = create_output_directories(output_dir, ref_sequences)
-        save_contig_mapping(output_dir, contig_mapping)
-
-        # Create visualizations
-        print("\nCreating visualizations...")
-        interactive_circular_files, interactive_linear_files = create_visualizations(
-            ref_sequences, seqid_dirs, aligner, args
-        )
-
-        # Generate gene alignments
-        if not args.no_gene_alignments and interactive_linear_files:
-            print("\nGenerating gene alignments...")
-            generate_gene_alignments(
-                interactive_linear_files, interactive_circular_files,
-                seqid_dirs, args.no_gene_alignments
+            # Analyze sequences
+            print("\nAnalyzing sequences...")
+            ref_sequences = analyze_sequences(
+                aligner, gff_parser, alignments_by_ref, contig_mapping,
+                args.min_gap, args.min_inversion
             )
 
-        # Save statistics
-        if ref_sequences:
-            save_gene_statistics(output_dir, ref_sequences)
+            # Create output directories and save contig mapping
+            seqid_dirs = create_output_directories(output_dir, ref_sequences)
+            save_contig_mapping(output_dir, contig_mapping)
 
-        # Generate summary report
-        summary_file = create_summary_report(output_dir, ref_sequences, args.contig, args.reference)
-        print(f"\nSummary report: {summary_file}")
-        print_final_summary(output_dir, ref_sequences)
+            # Create visualizations
+            print("\nCreating visualizations...")
+            interactive_circular_files, interactive_linear_files = create_visualizations(
+                ref_sequences, seqid_dirs, aligner, args
+            )
 
-        # Generate contig alignment dashboard
-        print("\n  Generating contig alignment dashboard...")
-        contig_dashboard = AlignmentDashboardGenerator(
-            output_dir, ref_sequences,
-            Path(args.contig).name, Path(args.reference).name,
-            mode='contig'
-        )
-        contig_index = contig_dashboard.generate_index_html()
-        print(f"  Dashboard: {contig_index}")
+            # Generate gene alignments
+            if not args.no_gene_alignments and interactive_linear_files:
+                print("\nGenerating gene alignments...")
+                generate_gene_alignments(
+                    interactive_linear_files, interactive_circular_files,
+                    seqid_dirs, args.no_gene_alignments
+                )
+
+            # Save statistics
+            if ref_sequences:
+                save_gene_statistics(output_dir, ref_sequences)
+
+            # Generate summary report
+            summary_file = create_summary_report(output_dir, ref_sequences, args.contig, args.reference)
+            print(f"\nSummary report: {summary_file}")
+            print_final_summary(output_dir, ref_sequences)
+
+            # Generate contig alignment dashboard
+            print("\n  Generating contig alignment dashboard...")
+            contig_dashboard = AlignmentDashboardGenerator(
+                output_dir, ref_sequences,
+                Path(args.contig).name, Path(args.reference).name,
+                mode='contig'
+            )
+            contig_index = contig_dashboard.generate_index_html()
+            print(f"  Dashboard: {contig_index}")
 
     # =========================================================================
     # SCAFFOLD MODE: Scaffold vs Reference
@@ -619,93 +626,102 @@ For more information: https://github.com/Aaron-Thiel/GenomeViz
         if scaffold_mode_cache_key not in cache:
             cache[scaffold_mode_cache_key] = {}
 
-        if not args.force and check_cache_valid(cache, scaffold_mode_cache_key, scaffold_input_files):
-            print("\n✓ Using cached results (unchanged input files)")
+        # Check if we can skip processing (cache valid AND output exists)
+        scaffold_index_file = output_dir / 'index.html'
+        skip_scaffold_mode = (
+            not args.force
+            and check_cache_valid(cache, scaffold_mode_cache_key, scaffold_input_files)
+            and scaffold_index_file.exists()
+        )
+
+        if skip_scaffold_mode:
+            print("\n✓ Skipping scaffold mode - output exists and input files unchanged")
+            print("  (use --force to reprocess)")
         else:
-            if 'input_hashes' in cache[scaffold_mode_cache_key]:
+            if not args.force and 'input_hashes' in cache.get(scaffold_mode_cache_key, {}):
                 print("\n⚠ Input files changed, reprocessing...")
 
-        # Orientation detection for scaffolds
-        print("\n  [2b] Scaffold Orientation Detection")
-        print("  " + "-"*66)
+            # Orientation detection for scaffolds
+            print("\n  [2b] Scaffold Orientation Detection")
+            print("  " + "-"*66)
 
-        if not args.no_auto_orient:
-            base_output_dir.mkdir(parents=True, exist_ok=True)
-            oriented_scaffold_path = base_output_dir / '.oriented_scaffold.fasta'
+            if not args.no_auto_orient:
+                base_output_dir.mkdir(parents=True, exist_ok=True)
+                oriented_scaffold_path = base_output_dir / '.oriented_scaffold.fasta'
 
-            if oriented_scaffold_path.exists() and not args.force:
-                scaffold_to_use = str(oriented_scaffold_path)
-                print(f"  ✓ Using cached oriented scaffold: {oriented_scaffold_path.name}")
-            else:
-                detector = OrientationDetector(reference_to_use, args.scaffold, preset=args.preset)
-                scaffold_to_use, temp_asm = detector.detect_and_correct()
-
-                if scaffold_to_use != args.scaffold:
-                    with open(scaffold_to_use, 'r') as src:
-                        with open(oriented_scaffold_path, 'w') as dst:
-                            dst.write(src.read())
+                if oriented_scaffold_path.exists() and not args.force:
                     scaffold_to_use = str(oriented_scaffold_path)
-                    if temp_asm:
-                        temp_files_to_cleanup.append(temp_asm)
-        else:
-            scaffold_to_use = args.scaffold
-            print("  ℹ️  Orientation detection skipped (--no-auto-orient)")
+                    print(f"  ✓ Using cached oriented scaffold: {oriented_scaffold_path.name}")
+                else:
+                    detector = OrientationDetector(reference_to_use, args.scaffold, preset=args.preset)
+                    scaffold_to_use, temp_asm = detector.detect_and_correct()
 
-        # Load reference and align
-        print("\n" + "-"*70)
-        print("Loading reference and aligning scaffold...")
-        print("-"*70)
-        aligner = GenomeAligner(reference_to_use, scaffold_to_use, preset=args.preset)
-        aligner.load_reference()
-        alignments_by_ref = aligner.align()
+                    if scaffold_to_use != args.scaffold:
+                        with open(scaffold_to_use, 'r') as src:
+                            with open(oriented_scaffold_path, 'w') as dst:
+                                dst.write(src.read())
+                        scaffold_to_use = str(oriented_scaffold_path)
+                        if temp_asm:
+                            temp_files_to_cleanup.append(temp_asm)
+            else:
+                scaffold_to_use = args.scaffold
+                print("  ℹ️  Orientation detection skipped (--no-auto-orient)")
 
-        # Create contig mapping
-        mapper = ContigMapper(alignments_by_ref)
-        contig_mapping = mapper.create_mapping()
+            # Load reference and align
+            print("\n" + "-"*70)
+            print("Loading reference and aligning scaffold...")
+            print("-"*70)
+            aligner = GenomeAligner(reference_to_use, scaffold_to_use, preset=args.preset)
+            aligner.load_reference()
+            alignments_by_ref = aligner.align()
 
-        # Analyze sequences
-        print("\nAnalyzing sequences...")
-        ref_sequences = analyze_sequences(
-            aligner, gff_parser, alignments_by_ref, contig_mapping,
-            args.min_gap, args.min_inversion
-        )
+            # Create contig mapping
+            mapper = ContigMapper(alignments_by_ref)
+            contig_mapping = mapper.create_mapping()
 
-        # Create output directories and save contig mapping
-        seqid_dirs = create_output_directories(output_dir, ref_sequences)
-        save_contig_mapping(output_dir, contig_mapping)
-
-        # Create visualizations
-        print("\nCreating visualizations...")
-        interactive_circular_files, interactive_linear_files = create_visualizations(
-            ref_sequences, seqid_dirs, aligner, args
-        )
-
-        # Generate gene alignments
-        if not args.no_gene_alignments and interactive_linear_files:
-            print("\nGenerating gene alignments...")
-            generate_gene_alignments(
-                interactive_linear_files, interactive_circular_files,
-                seqid_dirs, args.no_gene_alignments
+            # Analyze sequences
+            print("\nAnalyzing sequences...")
+            ref_sequences = analyze_sequences(
+                aligner, gff_parser, alignments_by_ref, contig_mapping,
+                args.min_gap, args.min_inversion
             )
 
-        # Save statistics
-        if ref_sequences:
-            save_gene_statistics(output_dir, ref_sequences)
+            # Create output directories and save contig mapping
+            seqid_dirs = create_output_directories(output_dir, ref_sequences)
+            save_contig_mapping(output_dir, contig_mapping)
 
-        # Generate summary report
-        summary_file = create_summary_report(output_dir, ref_sequences, args.scaffold, args.reference)
-        print(f"\nSummary report: {summary_file}")
-        print_final_summary(output_dir, ref_sequences)
+            # Create visualizations
+            print("\nCreating visualizations...")
+            interactive_circular_files, interactive_linear_files = create_visualizations(
+                ref_sequences, seqid_dirs, aligner, args
+            )
 
-        # Generate scaffold alignment dashboard
-        print("\n  Generating scaffold alignment dashboard...")
-        scaffold_dashboard = AlignmentDashboardGenerator(
-            output_dir, ref_sequences,
-            Path(args.scaffold).name, Path(args.reference).name,
-            mode='scaffold'
-        )
-        scaffold_index = scaffold_dashboard.generate_index_html()
-        print(f"  Dashboard: {scaffold_index}")
+            # Generate gene alignments
+            if not args.no_gene_alignments and interactive_linear_files:
+                print("\nGenerating gene alignments...")
+                generate_gene_alignments(
+                    interactive_linear_files, interactive_circular_files,
+                    seqid_dirs, args.no_gene_alignments
+                )
+
+            # Save statistics
+            if ref_sequences:
+                save_gene_statistics(output_dir, ref_sequences)
+
+            # Generate summary report
+            summary_file = create_summary_report(output_dir, ref_sequences, args.scaffold, args.reference)
+            print(f"\nSummary report: {summary_file}")
+            print_final_summary(output_dir, ref_sequences)
+
+            # Generate scaffold alignment dashboard
+            print("\n  Generating scaffold alignment dashboard...")
+            scaffold_dashboard = AlignmentDashboardGenerator(
+                output_dir, ref_sequences,
+                Path(args.scaffold).name, Path(args.reference).name,
+                mode='scaffold'
+            )
+            scaffold_index = scaffold_dashboard.generate_index_html()
+            print(f"  Dashboard: {scaffold_index}")
 
     # =========================================================================
     # COMPARISON MODE: Scaffolds vs Contigs
@@ -735,355 +751,363 @@ For more information: https://github.com/Aaron-Thiel/GenomeViz
         if comparison_mode_cache_key not in cache:
             cache[comparison_mode_cache_key] = {}
         
-        if not args.force and check_cache_valid(cache, comparison_mode_cache_key, comparison_input_files):
-            print("\n✓ Using cached results (unchanged input files)")
+        # Check if we can skip processing (cache valid AND output exists)
+        comparison_index_file = output_dir / 'index.html'
+        skip_comparison_mode = (
+            not args.force
+            and check_cache_valid(cache, comparison_mode_cache_key, comparison_input_files)
+            and comparison_index_file.exists()
+        )
+
+        if skip_comparison_mode:
+            print("\n✓ Skipping comparison mode - output exists and input files unchanged")
+            print("  (use --force to reprocess)")
         else:
-            if 'input_hashes' in cache[comparison_mode_cache_key]:
+            if not args.force and 'input_hashes' in cache.get(comparison_mode_cache_key, {}):
                 print("\n⚠ Input files changed, reprocessing...")
 
-        from src.assembly_comparison import AssemblyComparator, MultiAssemblyGFFParser
-        from src.comparison_visualizer import (
-            ScaffoldSequence,
-            ComparisonLinearVisualizer,
-            ComparisonInteractiveLinearVisualizer,
-            ComparisonCircularVisualizer,
-            ComparisonIndexGenerator,
-            ComparisonGeneAlignmentVisualizer
-        )
-        from src.gene_comparison import GeneIntegrityAnalyzer
+            from src.assembly_comparison import AssemblyComparator, MultiAssemblyGFFParser
+            from src.comparison_visualizer import (
+                ScaffoldSequence,
+                ComparisonLinearVisualizer,
+                ComparisonInteractiveLinearVisualizer,
+                ComparisonCircularVisualizer,
+                ComparisonIndexGenerator,
+                ComparisonGeneAlignmentVisualizer
+            )
+            from src.gene_comparison import GeneIntegrityAnalyzer
 
-        # Step C1: Orientation detection for scaffolds
-        print("\n  [C1] Scaffold Orientation Detection")
-        print("  " + "-"*66)
-        scaffolds_to_use = args.scaffold
-        if not args.no_auto_orient:
-            # Save oriented scaffolds to parent output directory for consistent caching across modes
-            # This allows standard → both transition without reprocessing
-            base_output_dir.mkdir(parents=True, exist_ok=True)
-            oriented_scaffolds_path = base_output_dir / '.oriented_scaffolds.fasta'
-            
-            # Check if we already have a cached oriented scaffolds
-            if oriented_scaffolds_path.exists() and not args.force:
-                scaffolds_to_use = str(oriented_scaffolds_path)
-                print(f"  ✓ Using cached oriented scaffolds: {oriented_scaffolds_path.name}")
-            else:
-                scaffold_detector = OrientationDetector(reference_to_use, args.scaffold, preset=args.preset)
-                scaffolds_to_use, temp_scaffolds = scaffold_detector.detect_and_correct()
-                
-                # Save to persistent location instead of temp
-                if scaffolds_to_use != args.scaffold:
-                    # Copy the corrected scaffolds to output directory
-                    with open(scaffolds_to_use, 'r') as src:
-                        with open(oriented_scaffolds_path, 'w') as dst:
-                            dst.write(src.read())
+            # Step C1: Orientation detection for scaffolds
+            print("\n  [C1] Scaffold Orientation Detection")
+            print("  " + "-"*66)
+            scaffolds_to_use = args.scaffold
+            if not args.no_auto_orient:
+                # Save oriented scaffolds to parent output directory for consistent caching across modes
+                # This allows standard → both transition without reprocessing
+                base_output_dir.mkdir(parents=True, exist_ok=True)
+                oriented_scaffolds_path = base_output_dir / '.oriented_scaffolds.fasta'
+
+                # Check if we already have a cached oriented scaffolds
+                if oriented_scaffolds_path.exists() and not args.force:
                     scaffolds_to_use = str(oriented_scaffolds_path)
-                    if temp_scaffolds:
-                        temp_files_to_cleanup.append(temp_scaffolds)
-        else:
-            print("  ℹ️  Orientation detection skipped (--no-auto-orient)")
+                    print(f"  ✓ Using cached oriented scaffolds: {oriented_scaffolds_path.name}")
+                else:
+                    scaffold_detector = OrientationDetector(reference_to_use, args.scaffold, preset=args.preset)
+                    scaffolds_to_use, temp_scaffolds = scaffold_detector.detect_and_correct()
 
-        # Step C2: Orientation detection for contigs
-        print("\n  [C2] Contig Orientation Detection")
-        print("  " + "-"*66)
-        contigs_to_use = args.contig
-        if not args.no_auto_orient:
-            # Save oriented contigs to parent output directory for consistent caching across modes
-            # This allows standard → both transition without reprocessing
-            base_output_dir.mkdir(parents=True, exist_ok=True)
-            oriented_contigs_path = base_output_dir / '.oriented_contigs.fasta'
-            
-            # Check if we already have a cached oriented contigs
-            if oriented_contigs_path.exists() and not args.force:
-                contigs_to_use = str(oriented_contigs_path)
-                print(f"  ✓ Using cached oriented contigs: {oriented_contigs_path.name}")
+                    # Save to persistent location instead of temp
+                    if scaffolds_to_use != args.scaffold:
+                        # Copy the corrected scaffolds to output directory
+                        with open(scaffolds_to_use, 'r') as src:
+                            with open(oriented_scaffolds_path, 'w') as dst:
+                                dst.write(src.read())
+                        scaffolds_to_use = str(oriented_scaffolds_path)
+                        if temp_scaffolds:
+                            temp_files_to_cleanup.append(temp_scaffolds)
             else:
-                contig_detector = OrientationDetector(reference_to_use, args.contig, preset=args.preset)
-                contigs_to_use, temp_contigs = contig_detector.detect_and_correct()
-                
-                # Save to persistent location instead of temp
-                if contigs_to_use != args.contig:
-                    # Copy the corrected contigs to output directory
-                    with open(contigs_to_use, 'r') as src:
-                        with open(oriented_contigs_path, 'w') as dst:
-                            dst.write(src.read())
+                print("  ℹ️  Orientation detection skipped (--no-auto-orient)")
+
+            # Step C2: Orientation detection for contigs
+            print("\n  [C2] Contig Orientation Detection")
+            print("  " + "-"*66)
+            contigs_to_use = args.contig
+            if not args.no_auto_orient:
+                # Save oriented contigs to parent output directory for consistent caching across modes
+                # This allows standard → both transition without reprocessing
+                base_output_dir.mkdir(parents=True, exist_ok=True)
+                oriented_contigs_path = base_output_dir / '.oriented_contigs.fasta'
+
+                # Check if we already have a cached oriented contigs
+                if oriented_contigs_path.exists() and not args.force:
                     contigs_to_use = str(oriented_contigs_path)
-                    if temp_contigs:
-                        temp_files_to_cleanup.append(temp_contigs)
-        else:
-            print("  ℹ️  Orientation detection skipped (--no-auto-orient)")
+                    print(f"  ✓ Using cached oriented contigs: {oriented_contigs_path.name}")
+                else:
+                    contig_detector = OrientationDetector(reference_to_use, args.contig, preset=args.preset)
+                    contigs_to_use, temp_contigs = contig_detector.detect_and_correct()
 
-        # Step C3: Align scaffolds to reference
-        print("\n  [C3] Aligning scaffolds to reference...")
-        if origin_position and origin_position != 0:
-            print(f"        Using rotated reference (origin at {origin_position:,} bp)")
-        scaffold_aligner = GenomeAligner(reference_to_use, scaffolds_to_use, preset=args.preset)
-        scaffold_aligner.load_reference()
-        scaffold_alignments = scaffold_aligner.align()
+                    # Save to persistent location instead of temp
+                    if contigs_to_use != args.contig:
+                        # Copy the corrected contigs to output directory
+                        with open(contigs_to_use, 'r') as src:
+                            with open(oriented_contigs_path, 'w') as dst:
+                                dst.write(src.read())
+                        contigs_to_use = str(oriented_contigs_path)
+                        if temp_contigs:
+                            temp_files_to_cleanup.append(temp_contigs)
+            else:
+                print("  ℹ️  Orientation detection skipped (--no-auto-orient)")
 
-        # Step C4: Align contigs to reference
-        print("\n  [C4] Aligning contigs to reference...")
-        if origin_position and origin_position != 0:
-            print(f"        Using rotated reference (origin at {origin_position:,} bp)")
-        contig_aligner = GenomeAligner(reference_to_use, contigs_to_use, preset=args.preset)
-        contig_aligner.load_reference()
-        contig_alignments = contig_aligner.align()
-
-        # Step C5: Parse additional GFF files
-        print("\n  [C5] Parsing assembly GFF files...")
-        multi_gff = MultiAssemblyGFFParser(
-            reference_gff_parser=gff_parser,  # Use rotated gff_parser for correct coordinates
-            scaffold_gff=args.scaffold_gff,
-            contig_gff=args.contig_gff
-        )
-
-        # Step C6: Find overlapping regions
-        print("\n  [C6] Finding scaffold-contig overlaps...")
-        comparator = AssemblyComparator(scaffold_alignments, contig_alignments)
-        comparison_summary = comparator.compute_comparison_summary()
-
-        print(f"  Found {comparison_summary['num_scaffolds']} scaffolds")
-        print(f"  Found {comparison_summary['num_contigs']} contigs")
-        print(f"  Found {comparison_summary['num_total_overlap_regions']} overlap regions")
-
-        # Get reference length for context visualization
-        # Use the largest reference sequence length
-        reference_lengths = {seqid: info['length']
-                            for seqid, info in scaffold_aligner.reference_sequences.items()}
-        total_reference_length = max(reference_lengths.values()) if reference_lengths else 0
-        print(f"  Reference genome length: {total_reference_length:,} bp")
-
-        # Track origin offset for coordinate consistency across modes
-        if origin_position and origin_position != 0:
-            print(f"  Origin offset applied: {origin_position:,} bp (oriC at position 0)")
-
-        # Use output_dir directly (it's already set to assembly_comparison/)
-        comparison_dir = output_dir
-
-        # Step C7: Generate visualizations for each scaffold
-        print("\n  [C7] Generating comparison visualizations...")
-
-        all_gene_results = {}
-        rc_scaffold_info = {}  # Track RC'd scaffolds and their lengths for TSV coordinate consistency
-
-        for scaffold_name in comparator.get_all_scaffolds():
-            overlap_regions = comparator.find_overlapping_contigs(scaffold_name)
-
-            if not overlap_regions:
-                print(f"    Skipping {scaffold_name} (no overlapping contigs)")
-                continue
-
-            # Create scaffold output directory
-            safe_name = "".join(c if c.isalnum() or c in '-_' else '_' for c in scaffold_name)
-            scaffold_dir = comparison_dir / safe_name
-            scaffold_dir.mkdir(exist_ok=True)
-
-            print(f"    Processing {scaffold_name} ({len(overlap_regions)} regions)...")
-
-            # Calculate scaffold reference span
-            ref_start = min(r.scaffold_ref_start for r in overlap_regions)
-            ref_end = max(r.scaffold_ref_end for r in overlap_regions)
-            reference_seqid = overlap_regions[0].reference_seqid
-
-            # Log coordinates for debugging rotation consistency
+            # Step C3: Align scaffolds to reference
+            print("\n  [C3] Aligning scaffolds to reference...")
             if origin_position and origin_position != 0:
-                print(f"      Scaffold maps to reference: {ref_start:,} - {ref_end:,} bp (rotated coords)")
+                print(f"        Using rotated reference (origin at {origin_position:,} bp)")
+            scaffold_aligner = GenomeAligner(reference_to_use, scaffolds_to_use, preset=args.preset)
+            scaffold_aligner.load_reference()
+            scaffold_alignments = scaffold_aligner.align()
 
-            # Analyze gene integrity
-            # Priority: scaffold GFF > reference GFF (required --gff)
-            gene_results = None
-            genes_are_reference_coords = False  # Track if genes are in reference coordinates
-            
-            # Get scaffold length from alignment data (needed for RC coordinate transformation)
-            scaffold_length = None
-            for ref_seqid_aln, alns in scaffold_alignments.items():
-                for aln in alns:
-                    if aln['query_name'] == scaffold_name or aln['query_name'] == scaffold_name.replace('_RC', ''):
-                        scaffold_length = aln.get('query_length')
-                        print(f"      Found scaffold_length={scaffold_length:,} from alignment of '{aln['query_name']}'")
-                        break
-                if scaffold_length:
-                    break
-            
-            if scaffold_length is None:
-                print(f"      Warning: Could not find scaffold_length for '{scaffold_name}'")
-            
-            # Track RC'd scaffolds for TSV coordinate consistency
-            if scaffold_name.endswith('_RC') and scaffold_length:
-                rc_scaffold_info[scaffold_name] = scaffold_length
-                print(f"      Tracking RC'd scaffold: {scaffold_name} (length={scaffold_length:,})")
-            
-            if multi_gff.has_genes('scaffold'):
-                # Use scaffold genes if scaffold GFF is provided
-                gene_analyzer = GeneIntegrityAnalyzer(overlap_regions, multi_gff)
-                gene_results = gene_analyzer.analyze_scaffold_genes_via_reference(
-                    scaffold_name, overlap_regions, scaffold_length=scaffold_length
-                )
-                if gene_results:
-                    all_gene_results[scaffold_name] = gene_results
-                    # Scaffold genes now have ref_start/ref_end set if they map to reference
-                    genes_are_reference_coords = True  # Use ref coords from gene results
-                    print(f"      Using {len(gene_results)} scaffold genes")
-            
-            # Fall back to reference genes if scaffold genes not available
-            # This happens when: no scaffold GFF, or scaffold was RC'd (coords don't match)
-            if not gene_results and multi_gff.has_genes('reference'):
-                gene_analyzer = GeneIntegrityAnalyzer(overlap_regions, multi_gff)
-                
-                # Get genes from EACH scaffold alignment region separately
-                # This prevents fetching genes from regions between scaffold alignments
-                gene_results = []
-                for region in overlap_regions:
-                    region_genes = gene_analyzer.analyze_reference_genes_in_range(
-                        region.scaffold_ref_start, region.scaffold_ref_end, 
-                        reference_seqid, [region]  # Only pass this region for coverage analysis
-                    )
-                    gene_results.extend(region_genes)
-                
-                if gene_results:
-                    all_gene_results[scaffold_name] = gene_results
-                    genes_are_reference_coords = True  # Reference genes already have absolute coords
-                    print(f"      Using {len(gene_results)} reference genes in region")
+            # Step C4: Align contigs to reference
+            print("\n  [C4] Aligning contigs to reference...")
+            if origin_position and origin_position != 0:
+                print(f"        Using rotated reference (origin at {origin_position:,} bp)")
+            contig_aligner = GenomeAligner(reference_to_use, contigs_to_use, preset=args.preset)
+            contig_aligner.load_reference()
+            contig_alignments = contig_aligner.align()
 
-            # Create ScaffoldSequence object for visualization
-            # Pass reference_length for full genome context visualization
-            # Pass origin_position to ensure coordinate consistency with contig/scaffold modes
-            scaffold_seq = ScaffoldSequence(
-                scaffold_name=scaffold_name,
-                ref_start=ref_start,
-                ref_end=ref_end,
-                overlap_regions=overlap_regions,
-                gene_results=gene_results,
-                reference_length=total_reference_length,
-                genes_are_reference_coords=genes_are_reference_coords,
-                origin_offset=origin_position if origin_position else 0
+            # Step C5: Parse additional GFF files
+            print("\n  [C5] Parsing assembly GFF files...")
+            multi_gff = MultiAssemblyGFFParser(
+                reference_gff_parser=gff_parser,  # Use rotated gff_parser for correct coordinates
+                scaffold_gff=args.scaffold_gff,
+                contig_gff=args.contig_gff
             )
 
-            # Create linear visualization
-            if not args.no_comparison:
-                # Static PNG
-                if not args.no_static:
-                    ComparisonLinearVisualizer.create_linear_plot(
-                        scaffold_seq,
-                        scaffold_dir / f'{safe_name}_linear.png',
-                        reference_seqid=reference_seqid
-                    )
-                # Interactive HTML
-                if not args.no_interactive:
-                    ComparisonInteractiveLinearVisualizer.create_interactive_linear_plot(
-                        scaffold_seq,
-                        scaffold_dir / f'{safe_name}_interactive_linear.html',
-                        reference_seqid=reference_seqid
-                    )
+            # Step C6: Find overlapping regions
+            print("\n  [C6] Finding scaffold-contig overlaps...")
+            comparator = AssemblyComparator(scaffold_alignments, contig_alignments)
+            comparison_summary = comparator.compute_comparison_summary()
 
-            # Create circular visualizations
-            circular_html_file = None
-            if not args.no_comparison:
-                # Interactive HTML
-                if not args.no_interactive:
-                    circular_html_file = scaffold_dir / f'{safe_name}_circular.html'
-                    ComparisonCircularVisualizer.create_interactive_circular_plot(
-                        scaffold_seq,
-                        circular_html_file,
-                        reference_seqid=reference_seqid
-                    )
-                # Static PNG
-                if not args.no_static:
-                    ComparisonCircularVisualizer.create_static_circular_plot(
-                        scaffold_seq,
-                        scaffold_dir / f'{safe_name}_circular.png',
-                        reference_seqid=reference_seqid
-                    )
+            print(f"  Found {comparison_summary['num_scaffolds']} scaffolds")
+            print(f"  Found {comparison_summary['num_contigs']} contigs")
+            print(f"  Found {comparison_summary['num_total_overlap_regions']} overlap regions")
 
-            # Generate gene alignment files if genes are available
-            if gene_results and not args.no_gene_alignments:
-                gene_align_dir = scaffold_dir / 'gene_alignments'
-                gene_align_dir.mkdir(exist_ok=True)
+            # Get reference length for context visualization
+            # Use the largest reference sequence length
+            reference_lengths = {seqid: info['length']
+                                for seqid, info in scaffold_aligner.reference_sequences.items()}
+            total_reference_length = max(reference_lengths.values()) if reference_lengths else 0
+            print(f"  Reference genome length: {total_reference_length:,} bp")
 
-                print(f"      Generating {len(gene_results)} gene alignments...")
-                for gene_result in gene_results:
-                    try:
-                        ComparisonGeneAlignmentVisualizer.create_gene_alignment_html(
-                            gene_result, scaffold_seq, gene_align_dir
+            # Track origin offset for coordinate consistency across modes
+            if origin_position and origin_position != 0:
+                print(f"  Origin offset applied: {origin_position:,} bp (oriC at position 0)")
+
+            # Use output_dir directly (it's already set to assembly_comparison/)
+            comparison_dir = output_dir
+
+            # Step C7: Generate visualizations for each scaffold
+            print("\n  [C7] Generating comparison visualizations...")
+
+            all_gene_results = {}
+            rc_scaffold_info = {}  # Track RC'd scaffolds and their lengths for TSV coordinate consistency
+
+            for scaffold_name in comparator.get_all_scaffolds():
+                overlap_regions = comparator.find_overlapping_contigs(scaffold_name)
+
+                if not overlap_regions:
+                    print(f"    Skipping {scaffold_name} (no overlapping contigs)")
+                    continue
+
+                # Create scaffold output directory
+                safe_name = "".join(c if c.isalnum() or c in '-_' else '_' for c in scaffold_name)
+                scaffold_dir = comparison_dir / safe_name
+                scaffold_dir.mkdir(exist_ok=True)
+
+                print(f"    Processing {scaffold_name} ({len(overlap_regions)} regions)...")
+
+                # Calculate scaffold reference span
+                ref_start = min(r.scaffold_ref_start for r in overlap_regions)
+                ref_end = max(r.scaffold_ref_end for r in overlap_regions)
+                reference_seqid = overlap_regions[0].reference_seqid
+
+                # Log coordinates for debugging rotation consistency
+                if origin_position and origin_position != 0:
+                    print(f"      Scaffold maps to reference: {ref_start:,} - {ref_end:,} bp (rotated coords)")
+
+                # Analyze gene integrity
+                # Priority: scaffold GFF > reference GFF (required --gff)
+                gene_results = None
+                genes_are_reference_coords = False  # Track if genes are in reference coordinates
+
+                # Get scaffold length from alignment data (needed for RC coordinate transformation)
+                scaffold_length = None
+                for ref_seqid_aln, alns in scaffold_alignments.items():
+                    for aln in alns:
+                        if aln['query_name'] == scaffold_name or aln['query_name'] == scaffold_name.replace('_RC', ''):
+                            scaffold_length = aln.get('query_length')
+                            print(f"      Found scaffold_length={scaffold_length:,} from alignment of '{aln['query_name']}'")
+                            break
+                    if scaffold_length:
+                        break
+
+                if scaffold_length is None:
+                    print(f"      Warning: Could not find scaffold_length for '{scaffold_name}'")
+
+                # Track RC'd scaffolds for TSV coordinate consistency
+                if scaffold_name.endswith('_RC') and scaffold_length:
+                    rc_scaffold_info[scaffold_name] = scaffold_length
+                    print(f"      Tracking RC'd scaffold: {scaffold_name} (length={scaffold_length:,})")
+
+                if multi_gff.has_genes('scaffold'):
+                    # Use scaffold genes if scaffold GFF is provided
+                    gene_analyzer = GeneIntegrityAnalyzer(overlap_regions, multi_gff)
+                    gene_results = gene_analyzer.analyze_scaffold_genes_via_reference(
+                        scaffold_name, overlap_regions, scaffold_length=scaffold_length
+                    )
+                    if gene_results:
+                        all_gene_results[scaffold_name] = gene_results
+                        # Scaffold genes now have ref_start/ref_end set if they map to reference
+                        genes_are_reference_coords = True  # Use ref coords from gene results
+                        print(f"      Using {len(gene_results)} scaffold genes")
+
+                # Fall back to reference genes if scaffold genes not available
+                # This happens when: no scaffold GFF, or scaffold was RC'd (coords don't match)
+                if not gene_results and multi_gff.has_genes('reference'):
+                    gene_analyzer = GeneIntegrityAnalyzer(overlap_regions, multi_gff)
+
+                    # Get genes from EACH scaffold alignment region separately
+                    # This prevents fetching genes from regions between scaffold alignments
+                    gene_results = []
+                    for region in overlap_regions:
+                        region_genes = gene_analyzer.analyze_reference_genes_in_range(
+                            region.scaffold_ref_start, region.scaffold_ref_end,
+                            reference_seqid, [region]  # Only pass this region for coverage analysis
                         )
-                    except Exception as e:
-                        print(f"      Warning: Could not create alignment for {gene_result.gene['name']}: {e}")
+                        gene_results.extend(region_genes)
 
-                # Add click handlers to circular plot
-                if circular_html_file and circular_html_file.exists():
-                    ComparisonGeneAlignmentVisualizer.add_circular_click_handler(
-                        circular_html_file, scaffold_seq, gene_results
+                    if gene_results:
+                        all_gene_results[scaffold_name] = gene_results
+                        genes_are_reference_coords = True  # Reference genes already have absolute coords
+                        print(f"      Using {len(gene_results)} reference genes in region")
+
+                # Create ScaffoldSequence object for visualization
+                # Pass reference_length for full genome context visualization
+                # Pass origin_position to ensure coordinate consistency with contig/scaffold modes
+                scaffold_seq = ScaffoldSequence(
+                    scaffold_name=scaffold_name,
+                    ref_start=ref_start,
+                    ref_end=ref_end,
+                    overlap_regions=overlap_regions,
+                    gene_results=gene_results,
+                    reference_length=total_reference_length,
+                    genes_are_reference_coords=genes_are_reference_coords,
+                    origin_offset=origin_position if origin_position else 0
+                )
+
+                # Create linear visualization
+                if not args.no_comparison:
+                    # Static PNG
+                    if not args.no_static:
+                        ComparisonLinearVisualizer.create_linear_plot(
+                            scaffold_seq,
+                            scaffold_dir / f'{safe_name}_linear.png',
+                            reference_seqid=reference_seqid
+                        )
+                    # Interactive HTML
+                    if not args.no_interactive:
+                        ComparisonInteractiveLinearVisualizer.create_interactive_linear_plot(
+                            scaffold_seq,
+                            scaffold_dir / f'{safe_name}_interactive_linear.html',
+                            reference_seqid=reference_seqid
+                        )
+
+                # Create circular visualizations
+                circular_html_file = None
+                if not args.no_comparison:
+                    # Interactive HTML
+                    if not args.no_interactive:
+                        circular_html_file = scaffold_dir / f'{safe_name}_circular.html'
+                        ComparisonCircularVisualizer.create_interactive_circular_plot(
+                            scaffold_seq,
+                            circular_html_file,
+                            reference_seqid=reference_seqid
+                        )
+                    # Static PNG
+                    if not args.no_static:
+                        ComparisonCircularVisualizer.create_static_circular_plot(
+                            scaffold_seq,
+                            scaffold_dir / f'{safe_name}_circular.png',
+                            reference_seqid=reference_seqid
+                        )
+
+                # Generate gene alignment files if genes are available
+                if gene_results and not args.no_gene_alignments:
+                    gene_align_dir = scaffold_dir / 'gene_alignments'
+                    gene_align_dir.mkdir(exist_ok=True)
+
+                    print(f"      Generating {len(gene_results)} gene alignments...")
+                    for gene_result in gene_results:
+                        try:
+                            ComparisonGeneAlignmentVisualizer.create_gene_alignment_html(
+                                gene_result, scaffold_seq, gene_align_dir
+                            )
+                        except Exception as e:
+                            print(f"      Warning: Could not create alignment for {gene_result.gene['name']}: {e}")
+
+                    # Add click handlers to circular plot
+                    if circular_html_file and circular_html_file.exists():
+                        ComparisonGeneAlignmentVisualizer.add_circular_click_handler(
+                            circular_html_file, scaffold_seq, gene_results
+                        )
+
+            # Step C8: Compute gene summary if available
+            gene_summary = None
+            if all_gene_results:
+                gene_analyzer = GeneIntegrityAnalyzer([], multi_gff)
+                gene_summary = gene_analyzer.compute_summary(all_gene_results)
+                print("\n  Gene Integrity Summary:")
+                print(f"    Complete: {gene_summary['status_counts']['complete']}")
+                print(f"    Split: {gene_summary['status_counts']['split']}")
+                print(f"    Truncated: {gene_summary['status_counts']['truncated']}")
+                print(f"    Missing: {gene_summary['status_counts']['missing']}")
+
+            # Step C9: New gene analyzer (find/classify genes new to scaffolds)
+            # Run BEFORE index generation so new genes appear in the index
+            if args.scaffold_gff and args.contig_gff:
+                print("\n  [C9] Analyzing new genes in scaffolds...")
+
+                # Get FAA file paths (derive from GFF paths)
+                scaffold_faa = args.scaffold_gff.replace('.gff3', '.faa').replace('.gff', '.faa')
+                contig_faa = args.contig_gff.replace('.gff3', '.faa').replace('.gff', '.faa')
+
+                # Check if FAA files exist
+                if os.path.exists(scaffold_faa) and os.path.exists(contig_faa):
+                    # Create analyzer with scaffold alignments for coordinate mapping
+                    # This maps genes to the global reference coordinate system used in visualizations
+                    analyzer = NewGeneAnalyzer(
+                        scaffolds_fasta=scaffolds_to_use,
+                        contigs_fasta=contigs_to_use,
+                        scaffolds_gff=args.scaffold_gff,
+                        contigs_gff=args.contig_gff,
+                        output_dir=output_dir,
+                        origin_offset=0,  # Not used when scaffold_alignments provided
+                        preset=args.preset,
+                        scaffold_alignments=scaffold_alignments  # Pass alignments for reference coordinate mapping
                     )
 
-        # Step C8: Compute gene summary if available
-        gene_summary = None
-        if all_gene_results:
-            gene_analyzer = GeneIntegrityAnalyzer([], multi_gff)
-            gene_summary = gene_analyzer.compute_summary(all_gene_results)
-            print(f"\n  Gene Integrity Summary:")
-            print(f"    Complete: {gene_summary['status_counts']['complete']}")
-            print(f"    Split: {gene_summary['status_counts']['split']}")
-            print(f"    Truncated: {gene_summary['status_counts']['truncated']}")
-            print(f"    Missing: {gene_summary['status_counts']['missing']}")
+                    analysis_results = analyzer.analyze()
 
-        # Step C9: Generate index page
-        print("\n  [C9] Generating comparison index...")
-        index_gen = ComparisonIndexGenerator(comparison_summary, comparison_dir, gene_summary)
-        index_file = index_gen.generate_index_html()
-        print(f"  Index page: {index_file}")
-
-        # Save comparison summary JSON
-        import json
-        summary_file = comparison_dir / 'comparison_summary.json'
-        # Remove non-serializable 'regions' from summary before saving
-        serializable_summary = {
-            'num_scaffolds': comparison_summary['num_scaffolds'],
-            'num_contigs': comparison_summary['num_contigs'],
-            'num_total_overlap_regions': comparison_summary['num_total_overlap_regions'],
-            'scaffold_stats': {
-                name: {k: v for k, v in stats.items() if k != 'regions'}
-                for name, stats in comparison_summary['scaffold_stats'].items()
-            }
-        }
-        with open(summary_file, 'w') as f:
-            json.dump(serializable_summary, f, indent=2)
-
-
-        # Step C11: New gene analyzer (find/classify genes new to scaffolds)
-        if args.scaffold_gff and args.contig_gff:
-            print("\n  [C11] Analyzing new genes in scaffolds...")
-            
-            # Get FAA file paths (derive from GFF paths)
-            scaffold_faa = args.scaffold_gff.replace('.gff3', '.faa').replace('.gff', '.faa')
-            contig_faa = args.contig_gff.replace('.gff3', '.faa').replace('.gff', '.faa')
-            
-            # Check if FAA files exist
-            if os.path.exists(scaffold_faa) and os.path.exists(contig_faa):
-                # Create analyzer with scaffold alignments for coordinate mapping
-                # This maps genes to the global reference coordinate system used in visualizations
-                analyzer = NewGeneAnalyzer(
-                    scaffolds_fasta=scaffolds_to_use,
-                    contigs_fasta=contigs_to_use,
-                    scaffolds_gff=args.scaffold_gff,
-                    contigs_gff=args.contig_gff,
-                    output_dir=output_dir,
-                    origin_offset=0,  # Not used when scaffold_alignments provided
-                    preset=args.preset,
-                    scaffold_alignments=scaffold_alignments  # Pass alignments for reference coordinate mapping
-                )
-                
-                analysis_results = analyzer.analyze()
-                
-                if analysis_results['new_genes_count'] > 0:
-                    print(f"\n  ✓ New gene analysis complete: {analysis_results['new_genes_count']} new genes found")
-                    print(f"    Output directory: {analyzer.new_genes_dir}")
+                    if analysis_results['new_genes_count'] > 0:
+                        print(f"\n  ✓ New gene analysis complete: {analysis_results['new_genes_count']} new genes found")
+                        print(f"    Output directory: {analyzer.new_genes_dir}")
+                    else:
+                        print("\n  ℹ️  No new genes found (all scaffold genes present in contigs)")
                 else:
-                    print("\n  ℹ️  No new genes found (all scaffold genes present in contigs)")
-            else:
-                print("\n  ℹ️  Skipping new gene analysis - FAA files not found")
-                if not os.path.exists(scaffold_faa):
-                    print(f"     Missing: {scaffold_faa}")
-                if not os.path.exists(contig_faa):
-                    print(f"     Missing: {contig_faa}")
+                    print("\n  ℹ️  Skipping new gene analysis - FAA files not found")
+                    if not os.path.exists(scaffold_faa):
+                        print(f"     Missing: {scaffold_faa}")
+                    if not os.path.exists(contig_faa):
+                        print(f"     Missing: {contig_faa}")
+
+            # Step C10: Generate index page (after new gene analysis so it's included)
+            print("\n  [C10] Generating comparison index...")
+            index_gen = ComparisonIndexGenerator(comparison_summary, comparison_dir, gene_summary)
+            index_file = index_gen.generate_index_html()
+            print(f"  Index page: {index_file}")
+
+            # Save comparison summary JSON
+            summary_file = comparison_dir / 'comparison_summary.json'
+            # Remove non-serializable 'regions' from summary before saving
+            serializable_summary = {
+                'num_scaffolds': comparison_summary['num_scaffolds'],
+                'num_contigs': comparison_summary['num_contigs'],
+                'num_total_overlap_regions': comparison_summary['num_total_overlap_regions'],
+                'scaffold_stats': {
+                    name: {k: v for k, v in stats.items() if k != 'regions'}
+                    for name, stats in comparison_summary['scaffold_stats'].items()
+                }
+            }
+            with open(summary_file, 'w') as f:
+                json.dump(serializable_summary, f, indent=2)
 
     # =========================================================================
     # CACHE MANAGEMENT

@@ -1,0 +1,254 @@
+{
+  "NZ_CP113945.1": {
+    "contig_1_RC": [
+      {
+        "ref_start": 0,
+        "ref_end": 40365,
+        "query_start": 491347,
+        "query_end": 531712,
+        "query_length": 531712,
+        "strand": "+",
+        "identity": 100.0,
+        "coverage": 40365
+      },
+      {
+        "ref_start": 1217552,
+        "ref_end": 1708996,
+        "query_start": 0,
+        "query_end": 491347,
+        "query_length": 531712,
+        "strand": "+",
+        "identity": 99.9802622475806,
+        "coverage": 491444
+      }
+    ],
+    "contig_3_RC": [
+      {
+        "ref_start": 45506,
+        "ref_end": 277421,
+        "query_start": 0,
+        "query_end": 231915,
+        "query_length": 231915,
+        "strand": "+",
+        "identity": 100.0,
+        "coverage": 231915
+      }
+    ],
+    "contig_10_RC": [
+      {
+        "ref_start": 279336,
+        "ref_end": 282552,
+        "query_start": 0,
+        "query_end": 3216,
+        "query_length": 3216,
+        "strand": "-",
+        "identity": 100.0,
+        "coverage": 3216
+      }
+    ],
+    "contig_6_RC": [
+      {
+        "ref_start": 282577,
+        "ref_end": 348226,
+        "query_start": 0,
+        "query_end": 65649,
+        "query_length": 65649,
+        "strand": "+",
+        "identity": 100.0,
+        "coverage": 65649
+      }
+    ],
+    "contig_4_RC": [
+      {
+        "ref_start": 353670,
+        "ref_end": 567884,
+        "query_start": 0,
+        "query_end": 214214,
+        "query_length": 214214,
+        "strand": "+",
+        "identity": 100.0,
+        "coverage": 214214
+      }
+    ],
+    "contig_15": [
+      {
+        "ref_start": 568905,
+        "ref_end": 569342,
+        "query_start": 0,
+        "query_end": 437,
+        "query_length": 437,
+        "strand": "+",
+        "identity": 100.0,
+        "coverage": 437
+      }
+    ],
+    "contig_5_RC": [
+      {
+        "ref_start": 569277,
+        "ref_end": 662824,
+        "query_start": 0,
+        "query_end": 93241,
+        "query_length": 93241,
+        "strand": "+",
+        "identity": 99.67289170149765,
+        "coverage": 93547
+      }
+    ],
+    "contig_16": [
+      {
+        "ref_start": 575812,
+        "ref_end": 576180,
+        "query_start": 0,
+        "query_end": 368,
+        "query_length": 368,
+        "strand": "+",
+        "identity": 100.0,
+        "coverage": 368
+      }
+    ],
+    "contig_9_RC": [
+      {
+        "ref_start": 662747,
+        "ref_end": 672369,
+        "query_start": 0,
+        "query_end": 9622,
+        "query_length": 9622,
+        "strand": "+",
+        "identity": 100.0,
+        "coverage": 9622
+      }
+    ],
+    "contig_8_RC": [
+      {
+        "ref_start": 672292,
+        "ref_end": 695984,
+        "query_start": 0,
+        "query_end": 23692,
+        "query_length": 23692,
+        "strand": "+",
+        "identity": 100.0,
+        "coverage": 23692
+      }
+    ],
+    "contig_14_RC": [
+      {
+        "ref_start": 708114,
+        "ref_end": 708560,
+        "query_start": 0,
+        "query_end": 446,
+        "query_length": 446,
+        "strand": "+",
+        "identity": 100.0,
+        "coverage": 446
+      }
+    ],
+    "contig_13_RC": [
+      {
+        "ref_start": 709269,
+        "ref_end": 709763,
+        "query_start": 0,
+        "query_end": 494,
+        "query_length": 494,
+        "strand": "+",
+        "identity": 100.0,
+        "coverage": 494
+      }
+    ],
+    "contig_20_RC": [
+      {
+        "ref_start": 711258,
+        "ref_end": 711509,
+        "query_start": 0,
+        "query_end": 251,
+        "query_length": 251,
+        "strand": "+",
+        "identity": 100.0,
+        "coverage": 251
+      }
+    ],
+    "contig_2_RC": [
+      {
+        "ref_start": 711498,
+        "ref_end": 1152793,
+        "query_start": 0,
+        "query_end": 441196,
+        "query_length": 441196,
+        "strand": "+",
+        "identity": 99.97756602726068,
+        "coverage": 441295
+      }
+    ],
+    "contig_12_RC": [
+      {
+        "ref_start": 1152716,
+        "ref_end": 1153891,
+        "query_start": 0,
+        "query_end": 1175,
+        "query_length": 1175,
+        "strand": "+",
+        "identity": 100.0,
+        "coverage": 1175
+      }
+    ],
+    "contig_19_RC": [
+      {
+        "ref_start": 1153814,
+        "ref_end": 1154093,
+        "query_start": 0,
+        "query_end": 279,
+        "query_length": 279,
+        "strand": "+",
+        "identity": 100.0,
+        "coverage": 279
+      }
+    ],
+    "contig_7_RC": [
+      {
+        "ref_start": 1154130,
+        "ref_end": 1212097,
+        "query_start": 0,
+        "query_end": 57967,
+        "query_length": 57967,
+        "strand": "+",
+        "identity": 100.0,
+        "coverage": 57967
+      }
+    ],
+    "contig_18": [
+      {
+        "ref_start": 1215242,
+        "ref_end": 1215523,
+        "query_start": 0,
+        "query_end": 281,
+        "query_length": 281,
+        "strand": "+",
+        "identity": 100.0,
+        "coverage": 281
+      }
+    ],
+    "contig_11_RC": [
+      {
+        "ref_start": 1215549,
+        "ref_end": 1217502,
+        "query_start": 0,
+        "query_end": 1953,
+        "query_length": 1953,
+        "strand": "-",
+        "identity": 100.0,
+        "coverage": 1953
+      }
+    ],
+    "contig_24_RC": [
+      {
+        "ref_start": 1217425,
+        "ref_end": 1217629,
+        "query_start": 0,
+        "query_end": 204,
+        "query_length": 204,
+        "strand": "+",
+        "identity": 100.0,
+        "coverage": 204
+      }
+    ]
+  }
+}

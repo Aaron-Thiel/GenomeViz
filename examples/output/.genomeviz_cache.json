@@ -1,0 +1,29 @@
+{
+  "contig_mode": {
+    "input_hashes": {
+      "reference": "745afa820a16000d7ca708dff374339a",
+      "contig": "f0d957513f6ebfdfafba12bf1e117d40",
+      "gff": "2f56292ded8e95b81352968c2ebd3304"
+    },
+    "timestamp": "2026-01-29T18:03:55.069959"
+  },
+  "scaffold_mode": {
+    "input_hashes": {
+      "reference": "745afa820a16000d7ca708dff374339a",
+      "scaffold": "e2866ab8bb271c8f9494eac94a0d7476",
+      "gff": "2f56292ded8e95b81352968c2ebd3304"
+    },
+    "timestamp": "2026-01-29T18:03:55.464771"
+  },
+  "comparison_mode": {
+    "input_hashes": {
+      "reference": "745afa820a16000d7ca708dff374339a",
+      "scaffold": "e2866ab8bb271c8f9494eac94a0d7476",
+      "contig": "f0d957513f6ebfdfafba12bf1e117d40",
+      "gff": "2f56292ded8e95b81352968c2ebd3304",
+      "scaffold_gff": "733888ac1918412912c6a2a0d8a11db5",
+      "contig_gff": "5275be786988ff79dd855dcedfd3728d"
+    },
+    "timestamp": "2026-01-29T18:03:56.636623"
+  }
+}

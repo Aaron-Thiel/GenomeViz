@@ -1,0 +1,5 @@
+GeneID,Product,Scaffold,Scaffold_Start,Scaffold_End,Ref_SeqID,Ref_Start,Ref_End,Classification,Joined,Mapping_Stats
+LOAKGO_00026,hypothetical protein,contig_1,20367,24209,NZ_CP113945.1,692659,696501,Combined Contigs (3 joined),"contig_13_RC, contig_2_RC, contig_8_RC","contig_8_RC: align: 0.01, id: 1.00; contig_13_RC: align: 0.00, id: 1.00; contig_2_RC: align: 0.26, id: 1.00"
+LOAKGO_00411,SLAP domain-containing protein,contig_1,460653,466406,NZ_CP113945.1,1132945,1138698,Combined Contigs (3 joined),"contig_12_RC, contig_2_RC, contig_7_RC","contig_2_RC: align: 0.26, id: 1.00; contig_12_RC: align: 0.00, id: 1.00; contig_7_RC: align: 0.03, id: 1.00"
+LOAKGO_00412,hypothetical protein,contig_1,466399,466620,NZ_CP113945.1,1138691,1138912,Combined Contigs (2 joined),"contig_12_RC, contig_7_RC","contig_12_RC: align: 0.00, id: 1.00; contig_7_RC: align: 0.03, id: 1.00"
+LOAKGO_01510,hypothetical protein,contig_1,1570217,1578970,NZ_CP113945.1,568921,577674,Combined Contigs (2 joined),"contig_15, contig_5_RC","contig_15: align: 0.00, id: 1.00; contig_5_RC: align: 0.06, id: 1.00"

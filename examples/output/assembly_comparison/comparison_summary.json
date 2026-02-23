@@ -1,0 +1,32 @@
+{
+  "num_scaffolds": 1,
+  "num_contigs": 20,
+  "num_total_overlap_regions": 4,
+  "scaffold_stats": {
+    "contig_1": {
+      "num_regions": 4,
+      "num_overlapping_contigs": 17,
+      "total_overlap_bp": 1676376,
+      "scaffold_coverage_bp": 1702598,
+      "contig_names": [
+        "contig_10_RC",
+        "contig_12_RC",
+        "contig_13_RC",
+        "contig_14_RC",
+        "contig_15",
+        "contig_16",
+        "contig_19_RC",
+        "contig_1_RC",
+        "contig_20_RC",
+        "contig_2_RC",
+        "contig_3_RC",
+        "contig_4_RC",
+        "contig_5_RC",
+        "contig_6_RC",
+        "contig_7_RC",
+        "contig_8_RC",
+        "contig_9_RC"
+      ]
+    }
+  }
+}

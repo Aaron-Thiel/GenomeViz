@@ -1,0 +1,34 @@
+======================================================================
+GENOME ASSEMBLY COMPARISON SUMMARY
+======================================================================
+
+Assembly: scaffolds.fna
+Reference: reference.fna
+
+
+CHROMOSOME: NZ_CP113945.1
+----------------------------------------------------------------------
+Length: 1,708,996 bp
+Alignments: 4
+Contigs aligned: 1
+Genes: 3192
+
+Gene Quality Summary:
+  Complete: 3185
+  Incomplete: 2
+  Divergent: 0
+  Missing: 5
+
+Average Gene Metrics:
+  Coverage: 99.8%
+  Identity: 98.2%
+  Quality Score: 98.7/100
+
+Misassemblies Detected:
+  Inversions: 0
+  Gaps: 2
+  Overlaps: 0
+
+======================================================================
+Analysis complete!
+======================================================================

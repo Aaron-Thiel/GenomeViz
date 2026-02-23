@@ -1,0 +1,364 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Scaffold vs Contig Comparison - GenomeViz</title>
+    <style>
+        :root {
+            --primary-color: #2563eb;
+            --success-color: #16a34a;
+            --warning-color: #d97706;
+            --danger-color: #dc2626;
+            --info-color: #0891b2;
+            --purple-color: #7c3aed;
+            --bg-color: #f8fafc;
+            --card-bg: #ffffff;
+            --text-color: #1e293b;
+            --text-muted: #64748b;
+            --border-color: #e2e8f0;
+        }
+
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: var(--bg-color);
+            color: var(--text-color);
+            line-height: 1.6;
+            padding: 2rem;
+        }
+
+        .container { max-width: 1200px; margin: 0 auto; }
+
+        .back-link {
+            display: inline-block;
+            margin-bottom: 1rem;
+            color: var(--primary-color);
+            text-decoration: none;
+        }
+        .back-link:hover { text-decoration: underline; }
+
+        header {
+            text-align: center;
+            margin-bottom: 2rem;
+            padding-bottom: 1rem;
+            border-bottom: 2px solid var(--border-color);
+        }
+
+        h1 { color: var(--primary-color); margin-bottom: 0.5rem; }
+        .subtitle { color: var(--text-muted); font-size: 1.1rem; }
+
+        h2 {
+            color: var(--text-color);
+            margin: 2rem 0 0.5rem 0;
+            padding-bottom: 0.5rem;
+            border-bottom: 1px solid var(--border-color);
+        }
+
+        .section-desc {
+            color: var(--text-muted);
+            margin-bottom: 1rem;
+            font-size: 0.95rem;
+        }
+
+        .summary-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+            gap: 1rem;
+            margin-bottom: 1.5rem;
+        }
+
+        .stat-card {
+            background: var(--card-bg);
+            padding: 1.5rem;
+            border-radius: 8px;
+            text-align: center;
+            border: 1px solid var(--border-color);
+        }
+
+        .stat-value {
+            font-size: 2rem;
+            font-weight: bold;
+            color: var(--primary-color);
+        }
+
+        .stat-label {
+            color: var(--text-muted);
+            font-size: 0.85rem;
+            margin-top: 0.25rem;
+        }
+
+        .stat-card.complete .stat-value { color: var(--success-color); }
+        .stat-card.split .stat-value { color: var(--warning-color); }
+        .stat-card.truncated .stat-value { color: #ea580c; }
+        .stat-card.missing .stat-value { color: var(--danger-color); }
+        .stat-card.combined .stat-value { color: var(--purple-color); }
+        .stat-card.reprediction .stat-value { color: var(--info-color); }
+        .stat-card.other .stat-value { color: var(--text-muted); }
+
+        .data-links {
+            display: flex;
+            gap: 0.75rem;
+            flex-wrap: wrap;
+            margin-bottom: 1.5rem;
+        }
+
+        .data-link {
+            display: inline-block;
+            padding: 0.5rem 1rem;
+            background: var(--card-bg);
+            color: var(--primary-color);
+            text-decoration: none;
+            border-radius: 6px;
+            border: 1px solid var(--border-color);
+            font-size: 0.9rem;
+            transition: all 0.2s;
+        }
+        .data-link:hover {
+            background: var(--primary-color);
+            color: white;
+            border-color: var(--primary-color);
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 1rem 0;
+            background: var(--card-bg);
+            border-radius: 8px;
+            overflow: hidden;
+            border: 1px solid var(--border-color);
+        }
+
+        th, td {
+            padding: 0.875rem 1rem;
+            text-align: left;
+        }
+
+        th {
+            background: var(--primary-color);
+            color: white;
+            font-weight: 500;
+            font-size: 0.9rem;
+        }
+
+        td { border-bottom: 1px solid var(--border-color); }
+        tr:last-child td { border-bottom: none; }
+        tr:hover td { background: #f8fafc; }
+
+        .viz-links {
+            display: flex;
+            gap: 0.5rem;
+        }
+
+        .viz-link {
+            display: inline-block;
+            padding: 0.375rem 0.75rem;
+            text-decoration: none;
+            border-radius: 4px;
+            font-size: 0.8rem;
+            font-weight: 500;
+            color: white;
+        }
+        .viz-link.circular { background: var(--purple-color); }
+        .viz-link.linear { background: var(--primary-color); }
+        .viz-link:hover { opacity: 0.9; }
+
+        .badge {
+            display: inline-block;
+            padding: 0.25rem 0.5rem;
+            border-radius: 4px;
+            font-size: 0.75rem;
+            font-weight: 500;
+        }
+        .badge.combined { background: #ede9fe; color: var(--purple-color); }
+        .badge.reprediction { background: #e0f2fe; color: var(--info-color); }
+        .badge.other { background: #f1f5f9; color: var(--text-muted); }
+
+        .more-info {
+            color: var(--text-muted);
+            font-size: 0.9rem;
+            margin-top: 0.5rem;
+        }
+        .more-info a { color: var(--primary-color); }
+
+        footer {
+            text-align: center;
+            margin-top: 3rem;
+            padding-top: 1rem;
+            border-top: 1px solid var(--border-color);
+            color: var(--text-muted);
+            font-size: 0.9rem;
+        }
+        footer a { color: var(--primary-color); }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <a href="../index.html" class="back-link">← Back to Sample Overview</a>
+
+        <header>
+            <h1>Scaffold vs Contig Comparison</h1>
+            <p class="subtitle">Analyzing differences between assembled scaffolds and original contigs</p>
+        </header>
+
+        <h2>Overview</h2>
+        <div class="summary-grid">
+            <div class="stat-card">
+                <div class="stat-value">1</div>
+                <div class="stat-label">Scaffolds</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-value">20</div>
+                <div class="stat-label">Contigs</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-value">4</div>
+                <div class="stat-label">Overlap Regions</div>
+            </div>
+        </div>
+
+        
+        <h2>Gene Integrity Summary</h2>
+        <p class="section-desc">How well contigs cover scaffold genes</p>
+        <div class="summary-grid">
+            <div class="stat-card">
+                <div class="stat-value">1564</div>
+                <div class="stat-label">Total Genes</div>
+            </div>
+            <div class="stat-card complete">
+                <div class="stat-value">1535</div>
+                <div class="stat-label">Complete</div>
+            </div>
+            <div class="stat-card split">
+                <div class="stat-value">6</div>
+                <div class="stat-label">Split</div>
+            </div>
+            <div class="stat-card truncated">
+                <div class="stat-value">3</div>
+                <div class="stat-label">Truncated</div>
+            </div>
+            <div class="stat-card missing">
+                <div class="stat-value">20</div>
+                <div class="stat-label">Missing</div>
+            </div>
+        </div>
+
+
+        
+        <h2>New Genes Analysis</h2>
+        <p class="section-desc">Genes in scaffolds that differ from or are absent in contigs</p>
+        <div class="summary-grid">
+            <div class="stat-card">
+                <div class="stat-value">5</div>
+                <div class="stat-label">Total New Genes</div>
+            </div>
+            <div class="stat-card combined">
+                <div class="stat-value">4</div>
+                <div class="stat-label">Combined Contigs</div>
+            </div>
+            <div class="stat-card reprediction">
+                <div class="stat-value">1</div>
+                <div class="stat-label">Re-predictions</div>
+            </div>
+            <div class="stat-card other">
+                <div class="stat-value">0</div>
+                <div class="stat-label">Other Source</div>
+            </div>
+        </div>
+
+        <div class="data-links">
+            <a href="new_genes/gene_comparison_report.csv" class="data-link">Full Report CSV</a>
+            <a href="new_genes/combined_contigs.csv" class="data-link">Combined Contigs CSV</a>
+            <a href="new_genes/contextual_repredictions.csv" class="data-link">Re-predictions CSV</a>
+            <a href="new_genes/visualizations/new_genes_visualizations.html" class="data-link">Sequence Alignments</a>
+        </div>
+
+        <table class="gene-table">
+            <thead>
+                <tr>
+                    <th>Gene ID</th>
+                    <th>Product</th>
+                    <th>Scaffold</th>
+                    <th>Position</th>
+                    <th>Classification</th>
+                </tr>
+            </thead>
+            <tbody>
+                
+                <tr>
+                    <td><strong>LOAKGO_00026</strong></td>
+                    <td>hypothetical protein</td>
+                    <td>contig_1</td>
+                    <td>20367 - 24209</td>
+                    <td><span class="badge combined">Combined Contigs</span></td>
+                </tr>
+
+                <tr>
+                    <td><strong>LOAKGO_00411</strong></td>
+                    <td>SLAP domain-containing protein</td>
+                    <td>contig_1</td>
+                    <td>460653 - 466406</td>
+                    <td><span class="badge combined">Combined Contigs</span></td>
+                </tr>
+
+                <tr>
+                    <td><strong>LOAKGO_00412</strong></td>
+                    <td>hypothetical protein</td>
+                    <td>contig_1</td>
+                    <td>466399 - 466620</td>
+                    <td><span class="badge combined">Combined Contigs</span></td>
+                </tr>
+
+                <tr>
+                    <td><strong>LOAKGO_01509</strong></td>
+                    <td>hypothetical protein</td>
+                    <td>contig_1</td>
+                    <td>1569513 - 1570073</td>
+                    <td><span class="badge reprediction">Contextual Re-prediction</span></td>
+                </tr>
+
+                <tr>
+                    <td><strong>LOAKGO_01510</strong></td>
+                    <td>hypothetical protein</td>
+                    <td>contig_1</td>
+                    <td>1570217 - 1578970</td>
+                    <td><span class="badge combined">Combined Contigs</span></td>
+                </tr>
+
+            </tbody>
+        </table>
+        
+
+
+        <h2>Scaffold Visualizations</h2>
+        <p class="section-desc">Interactive plots showing contig coverage on each scaffold</p>
+        <table>
+            <thead>
+                <tr>
+                    <th>Scaffold</th>
+                    <th>Overlapping Contigs</th>
+                    <th>Total Overlap</th>
+                    <th>Visualizations</th>
+                </tr>
+            </thead>
+            <tbody>
+                
+                <tr>
+                    <td><strong>contig_1</strong></td>
+                    <td>17</td>
+                    <td>1,676,376 bp</td>
+                    <td class="viz-links">
+                        <a href="contig_1/contig_1_circular.html" class="viz-link circular">Circular</a>
+                        <a href="contig_1/contig_1_interactive_linear.html" class="viz-link linear">Linear</a>
+                    </td>
+                </tr>
+
+            </tbody>
+        </table>
+
+        <footer>
+            Generated by <a href="https://github.com/Aaron-Thiel/GenomeViz">GenomeViz</a>
+        </footer>
+    </div>
+</body>
+</html>

@@ -5,6 +5,70 @@ All notable changes to GenomeViz will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.3.0] - 2026-02-23
+
+### Added
+- **Scaffold-Contig Comparison Mode**
+  - New `--mode comparison` to compare scaffolds against contigs using the reference as anchor
+  - Detects overlapping regions between scaffold and contig assemblies via reference coordinates
+  - Generates per-scaffold circular and linear comparison visualizations
+  - New modules: `assembly_comparison.py`, `comparison_visualizer.py`, `gene_comparison.py`
+
+- **Multi-Mode Analysis (`--mode all`)**
+  - Run contig alignment, scaffold alignment, and comparison modes in a single invocation
+  - Smart output directory structure: `contig_alignment/`, `scaffold_alignment/`, `assembly_comparison/`
+  - Root-level sample dashboard linking all analysis modes
+
+- **Auto-Detection Input Mode (`--input`)**
+  - New `--input` flag for automatic file detection from a directory
+  - Expects standard file names: `reference.{fna,fasta}`, `scaffolds.{fna,fasta,gff3,faa}`, `contigs.{fna,fasta,gff3,faa}`
+  - Auto-detects analysis mode based on available files
+  - Manual file arguments override auto-detected files
+
+- **Result Caching**
+  - MD5-based cache validation of input files
+  - Skips expensive alignment/analysis when inputs unchanged
+  - Visualization options can be toggled without reprocessing alignments
+  - Use `--force` to override cache and reprocess everything
+
+- **New Gene Analyzer**
+  - Identifies genes in scaffolds not present in contigs (by protein hash)
+  - Classifies new genes based on contig-scaffold alignment overlap
+  - Generates CSV reports and interactive visualizations
+  - Requires scaffold and contig GFF + FAA files
+
+- **Gene Integrity Analysis**
+  - Per-scaffold gene integrity assessment (complete, split, truncated, missing)
+  - Supports both scaffold-derived and reference-derived gene annotations
+  - Gene comparison reports with coverage and identity statistics
+
+- **HTML Dashboards**
+  - `AlignmentDashboardGenerator` for contig/scaffold alignment index pages
+  - `SampleDashboardGenerator` for root-level sample overview
+  - Interactive dashboards with alignment statistics and links to visualizations
+
+- **Docker Support**
+  - Dockerfile for containerized execution
+  - Nextflow-compatible with `/app` on PATH
+
+### Changed
+- Version updated from 1.2.0 to 1.3.0
+- CLI reorganized: `--assembly` replaced by `--scaffold` and `--contig` for explicit assembly type
+- `--gff` renamed to `--reference-gff` for clarity; added `--scaffold-gff` and `--contig-gff`
+- New `--mode` flag selects analysis mode: `contig`, `scaffold`, `comparison`, or `all`
+- New `--no-static` flag replaces separate `--no-circular` and `--no-linear` flags
+- `--no-interactive` now skips both circular and linear interactive plots
+- Main script expanded from ~214 lines to ~1200 lines with multi-mode pipeline
+- Import ordering cleaned up (stdlib first, then local modules)
+- Bare `except` replaced with explicit exception types
+
+### New Modules
+- `src/assembly_comparison.py` - Scaffold-contig overlap detection via reference
+- `src/comparison_visualizer.py` - Circular and linear comparison visualizations
+- `src/gene_comparison.py` - Gene integrity analysis between assemblies
+- `src/new_gene_analyzer.py` - Novel gene identification in scaffolds
+- `src/dashboard_generator.py` - HTML dashboard generation
+
 ## [1.2.0] - 2025-11-25
 
 ### Added
@@ -165,6 +229,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## Version History
 
+- **1.3.0**: Scaffold-contig comparison mode, multi-mode pipeline, caching, dashboards, Docker support
 - **1.2.0**: Origin of replication alignment and documentation improvements
 - **1.1.0**: Interactive linear plots with multi-level zoom and modular architecture
 - **1.0.0**: Initial public release

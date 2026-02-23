@@ -3,6 +3,7 @@
 ## Table of Contents
 - [Installation](#installation)
 - [Quick Start](#quick-start)
+- [Analysis Modes](#analysis-modes)
 - [Input Files](#input-files)
 - [Output Files](#output-files)
 - [Interpreting Results](#interpreting-results)
@@ -12,12 +13,44 @@
 
 ## Installation
 
-### Requirements
-- Python 3.7 or higher
-- pip package manager
-- mamba
+GenomeViz can be installed natively (via conda) or run through Docker. Docker is the easiest option and works identically on all platforms.
 
-### Step-by-Step Installation
+### Option 1: Docker (recommended, all platforms)
+
+Docker handles all dependencies automatically - no conda/mamba needed.
+
+```bash
+docker pull aaronthiel/genomeviz:1.3.0
+```
+
+**Running with Docker:**
+
+Linux / macOS:
+```bash
+docker run --rm \
+  -v /path/to/your/data:/data \
+  aaronthiel/genomeviz:1.3.0 \
+  python genomeViz.py --input /data/input/ --output /data/output/ --mode all
+```
+
+Windows (PowerShell):
+```powershell
+docker run --rm `
+  -v "${PWD}\my_data:/data" `
+  aaronthiel/genomeviz:1.3.0 `
+  python genomeViz.py --input /data/input/ --output /data/output/ --mode all
+```
+
+Windows (Command Prompt):
+```cmd
+docker run --rm -v "%cd%\my_data:/data" aaronthiel/genomeviz:1.3.0 python genomeViz.py --input /data/input/ --output /data/output/ --mode all
+```
+
+### Option 2: Native Installation (Linux / macOS / WSL)
+
+**Requirements:**
+- Python 3.7+
+- conda or mamba (required for `mappy`, which wraps minimap2's C library)
 
 1. **Clone the repository**:
 ```bash
@@ -25,10 +58,10 @@ git clone https://github.com/Aaron-Thiel/GenomeViz.git
 cd GenomeViz
 ```
 
-2. **Install dependencies**:
+2. **Create conda environment and install dependencies**:
 ```bash
-mamba create -n genomeviz python=3.11 -c conda-forge -c bioconda   mappy biopython numpy pandas matplotlib plotly -y
-pip install kaleido
+mamba create -n genomeviz python=3.11 -c conda-forge -c bioconda mappy biopython numpy pandas matplotlib plotly kaleido -y
+conda activate genomeviz
 ```
 
 3. **Test installation**:
@@ -36,29 +69,71 @@ pip install kaleido
 python genomeViz.py --version
 ```
 
+> **Note for Windows users**: Native installation on Windows is not recommended because `mappy` (the minimap2 Python binding) requires compilation of C code that may not work on Windows. Use Docker or WSL instead.
+
 ## Quick Start
 
-### Basic Command
+### Recommended: Auto-Detection Mode
+
+Place your files in a directory with standard names and let GenomeViz detect them:
 
 ```bash
-python genomeViz.py \
-  --reference your_reference.fasta \
-  --assembly your_assembly.fasta \
-  --gff your_genes.gff3 \
-  --output results/
+python genomeViz.py --input input_dir/ --output results/ --mode all
 ```
 
 ### Example with Provided Data
 
 ```bash
-python genomeViz.py \
-  --reference examples/input/reference.fna \
-  --assembly examples/input/sample.fna \
-  --gff examples/input/reference.gff3 \
-  --output examples/output/
+python genomeViz.py --input examples/input/ --output examples/output/ --mode all
 ```
 
+### Manual File Specification
+
+```bash
+python genomeViz.py \
+  --reference ref.fna \
+  --scaffold scaffolds.fna \
+  --contig contigs.fna \
+  --reference-gff ref.gff3 \
+  --output results/ \
+  --mode all
+```
+
+## Analysis Modes
+
+GenomeViz supports four analysis modes selected with `--mode`:
+
+### Contig Mode (`--mode contig`)
+Aligns contigs against the reference genome. Generates circular and linear visualizations showing gene quality, alignment status, coverage, and misassemblies.
+
+### Scaffold Mode (`--mode scaffold`)
+Aligns scaffolds against the reference genome. Same visualization output as contig mode.
+
+### Comparison Mode (`--mode comparison`)
+Compares scaffolds against contigs using the reference as anchor. Identifies how scaffolding changed the assembly: overlapping regions, gene integrity (split/truncated/missing genes), and novel genes introduced by scaffolding.
+
+### All Modes (`--mode all`)
+Runs contig, scaffold, and comparison modes in a single invocation. Creates separate output subdirectories and a root-level dashboard linking everything together. This is the recommended mode when both scaffold and contig assemblies are available.
+
 ## Input Files
+
+### Auto-Detection Directory (--input)
+
+When using `--input`, place files in a directory with these standard names:
+
+```
+input_dir/
+├── reference.fna          # Reference genome (required)
+├── reference.gff3         # Reference annotations (required)
+├── scaffolds.fna          # Scaffold assembly
+├── scaffolds.gff3         # Scaffold annotations (optional, for comparison)
+├── scaffolds.faa          # Scaffold proteins (optional, for new gene detection)
+├── contigs.fna            # Contig assembly
+├── contigs.gff3           # Contig annotations (optional, for comparison)
+└── contigs.faa            # Contig proteins (optional, for new gene detection)
+```
+
+Supported extensions: `.fna`, `.fasta`, `.fa` for FASTA; `.gff3`, `.gff` for GFF.
 
 ### Reference Genome (--reference)
 
@@ -69,32 +144,19 @@ The reference genome should be a complete, high-quality genome assembly. This ca
 - Plasmid(s)
 - Both
 
-**Example**:
-```
->chromosome
-ATGCGTACGTAGCTGATCG...
->plasmid_pXYZ
-GCTAGCTAGCTAGCTAG...
-```
-
-### Assembly (--assembly)
+### Scaffold Assembly (--scaffold)
 
 **Format**: FASTA (.fasta, .fna, .fa)
 
-Your draft assembly to compare against the reference. Can contain:
-- Multiple contigs
-- Scaffolds
-- Complete or partial assemblies
+Your scaffolded assembly to compare against the reference. Required for `--mode scaffold`, `--mode comparison`, and `--mode all`.
 
-**Example**:
-```
->contig_1
-ATGCGTACGTAGCTGATCG...
->contig_2
-GCTAGCTAGCTAGCTAG...
-```
+### Contig Assembly (--contig)
 
-### Gene Annotations (--gff)
+**Format**: FASTA (.fasta, .fna, .fa)
+
+Your contig assembly to compare against the reference. Required for `--mode contig`, `--mode comparison`, and `--mode all`.
+
+### Gene Annotations (--reference-gff)
 
 **Format**: GFF3 (.gff, .gff3)
 
@@ -106,36 +168,50 @@ Gene annotations for the reference genome. Must match reference sequence IDs.
 - PGAP
 - Any GFF3-compliant annotator
 
-**Example**:
-```
-##gff-version 3
-chromosome  Bakta  gene  1  1500  .  +  .  ID=gene001;Name=dnaA
-chromosome  Bakta  CDS   1  1500  .  +  0  ID=cds001;Parent=gene001
-```
-
 **Important**: Sequence IDs in GFF must match FASTA headers in reference!
+
+### Optional Assembly Annotations (--scaffold-gff, --contig-gff)
+
+GFF3 annotations for scaffold and contig assemblies. Used in comparison mode for gene integrity analysis and new gene detection. When FAA protein files are also present alongside these GFFs, the new gene analyzer can identify genes unique to scaffolds.
 
 ## Output Files
 
-GenomeViz creates an organized output structure with separate directories for each reference sequence:
+### All Modes Output (`--mode all`)
 
 ```
 output/
-├── sequence_1/                           # Directory for first reference sequence
-│   ├── sequence_1_circular.png          # Static circular plot
-│   ├── sequence_1_interactive_circular.html  # Interactive circular plot
-│   ├── sequence_1_linear.png            # Static linear plot
-│   ├── sequence_1_interactive_linear.html    # Interactive linear plot
-│   ├── sequence_1_gene_stats.csv        # Per-gene quality statistics
-│   └── gene_alignments/                 # Detailed gene alignments (for clicking)
-│       ├── gene_001.html
-│       ├── gene_002.html
-│       └── ...
-├── sequence_2/                           # If multiple sequences (e.g., plasmids)
-│   └── (similar structure)
-├── contig_mapping.json                   # All contig-to-reference mappings
-└── summary_report.txt                    # Overall analysis summary
+├── index.html                            # Root sample dashboard
+├── .genomeviz_cache.json                 # Cache metadata (auto-managed)
+├── contig_alignment/                     # Contig vs reference
+│   ├── index.html                       # Alignment dashboard
+│   ├── {seqid}/                         # Per-reference-sequence directory
+│   │   ├── *_circular.png               # Static circular plot
+│   │   ├── *_interactive_circular.html  # Interactive circular plot
+│   │   ├── *_linear.png                 # Static linear plot
+│   │   ├── *_interactive_linear.html    # Interactive linear plot
+│   │   ├── *_gene_stats.csv            # Per-gene quality statistics
+│   │   └── gene_alignments/            # Detailed gene alignments
+│   ├── contig_mapping.json
+│   └── summary_report.txt
+├── scaffold_alignment/                   # Scaffold vs reference (same structure)
+│   └── ...
+└── assembly_comparison/                  # Scaffold vs contig comparison
+    ├── index.html                       # Comparison dashboard
+    ├── comparison_summary.json          # Comparison statistics
+    ├── {scaffold_name}/                 # Per-scaffold comparison
+    │   ├── *_circular.html             # Interactive circular comparison
+    │   ├── *_circular.png              # Static circular comparison
+    │   ├── *_linear.png                # Static linear comparison
+    │   ├── *_interactive_linear.html   # Interactive linear comparison
+    │   └── gene_alignments/
+    └── new_genes/                       # Novel gene analysis
+        ├── gene_comparison_report.csv
+        └── visualizations/
 ```
+
+### Single Mode Output
+
+When running a single mode (`--mode contig` or `--mode scaffold`), the output structure is the same as the corresponding subdirectory above.
 
 ### Static Circular Plots (*.png)
 
@@ -347,6 +423,21 @@ Shows which assembly contigs align to each region.
 
 ## Advanced Options
 
+### Result Caching (NEW in v1.3.0)
+
+GenomeViz caches analysis results using MD5 hashes of input files:
+
+```bash
+# First run: full processing
+python genomeViz.py --input input_dir/ --output results/ --mode all --no-interactive
+
+# Second run: skips analysis, only regenerates interactive plots
+python genomeViz.py --input input_dir/ --output results/ --mode all
+
+# Force full reprocessing
+python genomeViz.py --input input_dir/ --output results/ --mode all --force
+```
+
 ### Adjusting Alignment Sensitivity
 
 ```bash
@@ -372,87 +463,66 @@ For large genomes:
 python genomeViz.py ... --min-gap 2000 --min-inversion 1000
 ```
 
-### Controlling Origin of Replication (NEW in v1.2.0)
+### Controlling Origin of Replication
 
-By default, GenomeViz auto-detects oriC from your GFF file and rotates the reference to start at the origin:
+By default, GenomeViz auto-detects oriC from your GFF file and rotates the reference:
 
 ```bash
-# Auto-detect oriC (default behavior)
-python genomeViz.py \
-  --reference ref.fna \
-  --assembly asm.fna \
-  --gff genes.gff3 \
-  --output results/
-```
+# Auto-detect oriC (default)
+python genomeViz.py --input input_dir/ --output results/ --mode all
 
-To manually specify the origin position:
-```bash
-# Start visualization at position 150,000 bp
-python genomeViz.py \
-  --reference ref.fna \
-  --assembly asm.fna \
-  --gff genes.gff3 \
-  --output results/ \
-  --origin 150000
-```
+# Manually set origin at 150,000 bp
+python genomeViz.py --input input_dir/ --output results/ --mode all --origin 150000
 
-To disable origin rotation entirely:
-```bash
-# Keep original sequence coordinates (no rotation)
-python genomeViz.py \
-  --reference ref.fna \
-  --assembly asm.fna \
-  --gff genes.gff3 \
-  --output results/ \
-  --origin 0
+# Disable origin rotation
+python genomeViz.py --input input_dir/ --output results/ --mode all --origin 0
 ```
 
 ### Skipping Specific Outputs
 
 ```bash
-# Skip static circular plots
-python genomeViz.py ... --no-circular
+# Skip all static PNG plots
+python genomeViz.py ... --no-static
 
-# Skip interactive circular plots
+# Skip all interactive HTML plots
 python genomeViz.py ... --no-interactive
 
-# Skip static linear plots
-python genomeViz.py ... --no-linear
-
-# Skip interactive linear plots
-python genomeViz.py ... --no-interactive-linear
+# Skip comparison mode visualizations
+python genomeViz.py ... --no-comparison
 
 # Skip gene alignment generation (disables gene clicking feature)
 python genomeViz.py ... --no-gene-alignments
-
-# Only generate statistics (skip all visualizations)
-python genomeViz.py ... --no-circular --no-interactive --no-linear --no-interactive-linear
 ```
 
-**Note**: Using `--no-gene-alignments` will disable the gene clicking feature in interactive plots but can save time for large genomes with many genes.
-
-### Using Interactive Linear Plots
-
-The interactive linear plot is generated by default and provides powerful exploration capabilities:
+### Docker Usage
 
 ```bash
-# Default: generates all plots including interactive linear
-python genomeViz.py \
-  --reference ref.fna \
-  --assembly asm.fna \
-  --gff genes.gff3 \
-  --output results/
-
-# Open the interactive linear plot
-# results/{seqid}_interactive_linear.html
+# Pull the image
+docker pull aaronthiel/genomeviz:1.3.0
 ```
 
-**Best practices**:
-- Start at genome level to identify problematic regions
-- Zoom in on specific genes for detailed inspection
-- Use range slider for rapid genome navigation
-- Export high-resolution views for presentations
-- Toggle tracks to focus on specific data types
+**Linux / macOS:**
+```bash
+docker run --rm \
+  -v /path/to/your/data:/data \
+  aaronthiel/genomeviz:1.3.0 \
+  python genomeViz.py --input /data/input/ --output /data/output/ --mode all
+```
+
+**Windows (PowerShell):**
+```powershell
+docker run --rm `
+  -v "${PWD}\my_data:/data" `
+  aaronthiel/genomeviz:1.3.0 `
+  python genomeViz.py --input /data/input/ --output /data/output/ --mode all
+```
+
+**Windows (Command Prompt):**
+```cmd
+docker run --rm -v "%cd%\my_data:/data" aaronthiel/genomeviz:1.3.0 python genomeViz.py --input /data/input/ --output /data/output/ --mode all
+```
+
+> **Tip**: The `-v` flag mounts a local directory into the container. Place your input files in a subdirectory (e.g., `my_data/input/`) and outputs will be written to `my_data/output/`.
 
 ### Disabling Auto-Orientation
 
@@ -604,21 +674,18 @@ Then compare the outputs manually.
 
 ### Q: Does GenomeViz support origin of replication alignment?
 
-**A**: Yes! GenomeViz automatically detects the origin of replication (oriC) from your GFF annotations and rotates the reference sequence to start at oriC. This ensures:
-- Consistent visualization starting points across different genomes
-- Biological relevance (starting at the replication origin)
-- Better comparability between assemblies
+**A**: Yes! GenomeViz automatically detects the origin of replication (oriC) from your GFF annotations and rotates the reference sequence to start at oriC. No user action required - it's completely automatic. Use `--origin 0` to disable.
 
-**Requirements**:
-- Your GFF file must contain an oriC feature annotation
-- Common annotation tools (Bakta, Prokka) often include oriC in their outputs
-- If oriC is not found, the tool proceeds normally without rotation
+### Q: What is comparison mode?
 
-**How it works**:
-- Automatically searches for "origin_of_replication" or "oriC" in GFF annotations
-- Rotates reference sequence to start at detected position
-- Updates all gene coordinates accordingly
-- No user action required - it's completely automatic!
+**A**: Comparison mode (`--mode comparison`) compares scaffolds against contigs using the reference as a coordinate anchor. It identifies:
+- How scaffolding changed contig organization
+- Gene integrity across assembly stages (split, truncated, missing genes)
+- Novel genes introduced by scaffolding (when assembly GFFs + FAA files are provided)
+
+### Q: How does caching work?
+
+**A**: GenomeViz computes MD5 hashes of input files and stores them in `.genomeviz_cache.json`. On subsequent runs, if input files haven't changed, expensive alignment and analysis steps are skipped. Visualization options can be toggled without reprocessing. Use `--force` to override the cache.
 
 ## Getting Help
 

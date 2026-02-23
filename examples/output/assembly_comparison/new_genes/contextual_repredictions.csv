@@ -1,0 +1,2 @@
+GeneID,Product,Scaffold,Scaffold_Start,Scaffold_End,Ref_SeqID,Ref_Start,Ref_End,Classification,Joined,Mapping_Stats
+LOAKGO_01509,hypothetical protein,contig_1,1569513,1570073,NZ_CP113945.1,553682,554242,Contextual Re-prediction,contig_4_RC,"contig_4_RC: align: 0.13, id: 1.00"

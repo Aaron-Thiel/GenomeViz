@@ -1,0 +1,46 @@
+{
+  "NZ_CP113945.1": {
+    "contig_1": [
+      {
+        "ref_start": 0,
+        "ref_end": 567884,
+        "query_start": 1015831,
+        "query_end": 1570045,
+        "query_length": 1673359,
+        "strand": "+",
+        "identity": 97.56881291233606,
+        "coverage": 567884
+      },
+      {
+        "ref_start": 568905,
+        "ref_end": 672369,
+        "query_start": 1570201,
+        "query_end": 1673359,
+        "query_length": 1673359,
+        "strand": "+",
+        "identity": 99.70424495476688,
+        "coverage": 103464
+      },
+      {
+        "ref_start": 672292,
+        "ref_end": 1212098,
+        "query_start": 0,
+        "query_end": 524371,
+        "query_length": 1673359,
+        "strand": "+",
+        "identity": 97.1406394149009,
+        "coverage": 539806
+      },
+      {
+        "ref_start": 1217552,
+        "ref_end": 1708996,
+        "query_start": 524484,
+        "query_end": 1015831,
+        "query_length": 1673359,
+        "strand": "+",
+        "identity": 99.9802622475806,
+        "coverage": 491444
+      }
+    ]
+  }
+}
